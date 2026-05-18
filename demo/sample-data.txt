@@ -1,0 +1,2 @@
+Confidential course project document.
+Proxy re-encryption allows a semi-trusted proxy to transform encrypted key capsules without seeing plaintext.

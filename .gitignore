@@ -1,0 +1,11 @@
+target/
+*.class
+
+.idea/
+.vscode/
+*.iml
+
+.DS_Store
+
+demo/output/
+docs/reports/performance-results.csv
