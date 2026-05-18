@@ -1,0 +1,33 @@
+=== RSA-PRE Scenario ===
+Alice uploads encrypted file: success
+Ciphertext differs from plaintext: true
+Bob decrypts before authorization: failed
+Proxy re-encrypts capsule: success
+Bob decrypts after authorization: success
+Charlie decrypts after Bob authorization: failed
+Recovered plaintext: Confidential course project document: PRE protects cloud data sharing.
+Audit log:
+  2026-05-18T16:15:54.720796Z Alice KEYGEN Alice success=true
+  2026-05-18T16:15:54.723109Z Bob KEYGEN Bob success=true
+  2026-05-18T16:15:54.724614Z Charlie KEYGEN Charlie success=true
+  2026-05-18T16:15:54.741968Z Alice UPLOAD_ENCRYPTED cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
+  2026-05-18T16:15:54.744142Z Alice AUTHORIZE Bob success=true
+  2026-05-18T16:15:54.745908Z proxy RE_ENCRYPT cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
+  2026-05-18T16:15:54.748248Z Bob DECRYPT_REENCRYPTED cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
+
+=== ECC-PRE Scenario ===
+Alice uploads encrypted file: success
+Ciphertext differs from plaintext: true
+Bob decrypts before authorization: failed
+Proxy re-encrypts capsule: success
+Bob decrypts after authorization: success
+Charlie decrypts after Bob authorization: failed
+Recovered plaintext: Confidential course project document: PRE protects cloud data sharing.
+Audit log:
+  2026-05-18T16:15:54.764663Z Alice KEYGEN Alice success=true
+  2026-05-18T16:15:54.777474Z Bob KEYGEN Bob success=true
+  2026-05-18T16:15:54.784665Z Charlie KEYGEN Charlie success=true
+  2026-05-18T16:15:54.795829Z Alice UPLOAD_ENCRYPTED 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
+  2026-05-18T16:15:54.802270Z Alice AUTHORIZE Bob success=true
+  2026-05-18T16:15:54.807090Z proxy RE_ENCRYPT 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
+  2026-05-18T16:15:54.812464Z Bob DECRYPT_REENCRYPTED 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
