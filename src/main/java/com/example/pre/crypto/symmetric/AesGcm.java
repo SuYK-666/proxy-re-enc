@@ -19,7 +19,10 @@ public final class AesGcm {
     }
 
     public static CipherText encrypt(byte[] key, byte[] plaintext, byte[] aad) {
-        byte[] nonce = SecureRandomUtil.randomBytes(NONCE_BYTES);
+        byte[] nonce;
+        do {
+            nonce = SecureRandomUtil.randomBytes(NONCE_BYTES);
+        } while (!AesGcmNonceManager.reserve(key, nonce));
         return new CipherText(nonce, crypt(Cipher.ENCRYPT_MODE, key, nonce, plaintext, aad));
     }
 

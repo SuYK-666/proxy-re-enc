@@ -4,20 +4,29 @@ import com.example.pre.crypto.PreScheme;
 import com.example.pre.crypto.ecc.EccPreScheme;
 import com.example.pre.crypto.rsa.RsaCommonModulusParameters;
 import com.example.pre.crypto.rsa.RsaPreScheme;
+import com.example.pre.model.AccessPolicy;
 import com.example.pre.model.AuditEvent;
 import com.example.pre.model.EncryptedDataPackage;
 import com.example.pre.model.ReEncryptedPackage;
+import com.example.pre.model.ShareGrant;
 import com.example.pre.model.User;
 import com.example.pre.service.AuthorizationService;
 import com.example.pre.service.DataSecurityService;
+import com.example.pre.service.DemoPrivateKeyStore;
+import com.example.pre.service.ObjectAuthorizationService;
+import com.example.pre.service.ProxyReEncryptionService;
 import com.example.pre.service.UserService;
 import com.example.pre.storage.InMemoryAuditRepository;
 import com.example.pre.storage.InMemoryDataRepository;
+import com.example.pre.storage.InMemoryGrantRepository;
+import com.example.pre.storage.InMemoryReEncryptedPackageRepository;
 import com.example.pre.storage.InMemoryUserRepository;
 import com.example.pre.util.Bytes;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -37,9 +46,14 @@ public final class DemoApplication {
 
     private static List<String> runScenario(PreScheme scheme) {
         InMemoryAuditRepository audit = new InMemoryAuditRepository();
+        InMemoryDataRepository dataRepository = new InMemoryDataRepository();
+        InMemoryGrantRepository grantRepository = new InMemoryGrantRepository();
+        InMemoryReEncryptedPackageRepository packageRepository = new InMemoryReEncryptedPackageRepository();
         UserService users = new UserService(scheme, new InMemoryUserRepository(), audit);
-        DataSecurityService dataService = new DataSecurityService(scheme, new InMemoryDataRepository(), audit);
-        AuthorizationService authorizationService = new AuthorizationService(scheme, audit);
+        DataSecurityService dataService = new DataSecurityService(scheme, dataRepository, audit);
+        AuthorizationService authorizationService = new AuthorizationService(scheme, audit, grantRepository);
+        ObjectAuthorizationService objectAuth = new ObjectAuthorizationService(dataRepository, grantRepository, packageRepository, audit);
+        ProxyReEncryptionService proxy = new ProxyReEncryptionService(scheme, dataRepository, grantRepository, packageRepository, objectAuth, audit);
 
         User alice = users.createUser("Alice");
         User bob = users.createUser("Bob");
@@ -49,7 +63,8 @@ public final class DemoApplication {
         EncryptedDataPackage uploaded = dataService.upload(alice, plaintext);
 
         boolean bobBefore = canDecryptOriginal(dataService, bob, uploaded);
-        ReEncryptedPackage bobPackage = authorizationService.authorize(alice, bob, uploaded);
+        ShareGrant grant = createGrant(scheme, authorizationService, alice, bob, uploaded);
+        ReEncryptedPackage bobPackage = proxy.reEncrypt("proxy", grant.grantId());
         byte[] bobPlaintext = dataService.decryptReEncrypted(bob, bobPackage);
         boolean bobAfter = new String(bobPlaintext).equals(new String(plaintext));
         boolean charlieAfter = canDecryptReEncrypted(dataService, charlie, bobPackage);
@@ -69,6 +84,28 @@ public final class DemoApplication {
                     + " " + event.target() + " success=" + event.success());
         }
         return lines;
+    }
+
+    private static ShareGrant createGrant(
+            PreScheme scheme,
+            AuthorizationService authorizationService,
+            User alice,
+            User bob,
+            EncryptedDataPackage uploaded
+    ) {
+        AccessPolicy policy = AccessPolicy.normal(Instant.now().plus(1, ChronoUnit.DAYS));
+        if (scheme instanceof EccPreScheme) {
+            var context = com.example.pre.crypto.ecc.ReKeySessionContext.create();
+            return authorizationService.createGrantWithRecipientShare(
+                    alice,
+                    bob,
+                    uploaded,
+                    policy,
+                    DemoPrivateKeyStore.createEccRecipientShareLocally(bob, context),
+                    context
+            );
+        }
+        return authorizationService.createGrant(alice, bob, uploaded, policy);
     }
 
     private static boolean canDecryptOriginal(DataSecurityService service, User user, EncryptedDataPackage dataPackage) {

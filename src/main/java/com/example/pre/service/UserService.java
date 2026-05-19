@@ -3,6 +3,7 @@ package com.example.pre.service;
 import com.example.pre.crypto.PreScheme;
 import com.example.pre.model.AuditEvent;
 import com.example.pre.model.User;
+import com.example.pre.model.UserRole;
 import com.example.pre.storage.AuditRepository;
 import com.example.pre.storage.UserRepository;
 
@@ -20,9 +21,21 @@ public final class UserService {
     }
 
     public User createUser(String userId) {
-        User user = new User(userId, scheme.generateKeyPair(userId));
+        return createUser(userId, UserRole.RECIPIENT);
+    }
+
+    public User createUser(String userId, UserRole role) {
+        User user = new User(userId, scheme.generateKeyPair(userId)).withRole(role);
         users.save(user);
         audit.record(new AuditEvent(Instant.now(), userId, "KEYGEN", userId, true, scheme.name()));
         return user;
+    }
+
+    public User rotateUserKey(User current) {
+        User rotated = new User(current.userId(), scheme.generateKeyPair(current.userId()),
+                current.username(), current.role(), current.status(), current.createdAt());
+        users.save(rotated);
+        audit.record(new AuditEvent(Instant.now(), current.userId(), "USER_KEYPAIR_ROTATE", current.userId(), true, scheme.name()));
+        return rotated;
     }
 }

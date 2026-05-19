@@ -61,6 +61,16 @@ class EccPreSchemeTest {
         assertThrows(RuntimeException.class, () -> scheme.decapsulate(tampered, alice.privateKey()));
     }
 
+    @Test
+    void rejectsNonCanonicalPointCoordinates() {
+        P256Curve curve = new P256Curve();
+        byte[] encoded = curve.encode(P256Curve.G);
+        byte[] p = com.example.pre.util.Bytes.unsignedFixed(P256Curve.P, P256Curve.FIELD_BYTES);
+        System.arraycopy(p, 0, encoded, 1, P256Curve.FIELD_BYTES);
+
+        assertThrows(IllegalArgumentException.class, () -> curve.decode(encoded));
+    }
+
     private static ReEncryptionKey createReKey(UserKeyPair alice, UserKeyPair bob) {
         EccInteractiveReKeyGenerator generator = new EccInteractiveReKeyGenerator();
         ReKeySessionContext context = ReKeySessionContext.create();

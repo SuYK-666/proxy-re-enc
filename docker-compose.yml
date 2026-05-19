@@ -1,0 +1,9 @@
+services:
+  rekeyshare-api:
+    build: .
+    container_name: rekeyshare-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./storage:/app/storage
+      - ./docs/reports:/app/docs/reports

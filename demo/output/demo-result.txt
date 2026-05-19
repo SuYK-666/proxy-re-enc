@@ -7,13 +7,16 @@ Bob decrypts after authorization: success
 Charlie decrypts after Bob authorization: failed
 Recovered plaintext: Confidential course project document: PRE protects cloud data sharing.
 Audit log:
-  2026-05-18T16:15:54.720796Z Alice KEYGEN Alice success=true
-  2026-05-18T16:15:54.723109Z Bob KEYGEN Bob success=true
-  2026-05-18T16:15:54.724614Z Charlie KEYGEN Charlie success=true
-  2026-05-18T16:15:54.741968Z Alice UPLOAD_ENCRYPTED cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
-  2026-05-18T16:15:54.744142Z Alice AUTHORIZE Bob success=true
-  2026-05-18T16:15:54.745908Z proxy RE_ENCRYPT cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
-  2026-05-18T16:15:54.748248Z Bob DECRYPT_REENCRYPTED cd8f84ef-779b-4102-9887-d4024294f0a0 success=true
+  2026-05-19T11:21:21.956848600Z Alice KEYGEN Alice success=true
+  2026-05-19T11:21:21.979567700Z Bob KEYGEN Bob success=true
+  2026-05-19T11:21:21.982567700Z Charlie KEYGEN Charlie success=true
+  2026-05-19T11:21:22.051960300Z Alice DATA_UPLOAD c11a2f36-56fe-41d8-aa1d-9afbc8c6b459 success=true
+  2026-05-19T11:21:22.052964600Z Alice DATA_ENCRYPT c11a2f36-56fe-41d8-aa1d-9afbc8c6b459 success=true
+  2026-05-19T11:21:22.052964600Z Alice UPLOAD_ENCRYPTED c11a2f36-56fe-41d8-aa1d-9afbc8c6b459 success=true
+  2026-05-19T11:21:22.069643700Z Alice GRANT_CREATE 2f1c0c88-f5e8-4aed-a977-f1be16972435 success=true
+  2026-05-19T11:21:22.069643700Z Alice REKEY_GENERATE 2f1c0c88-f5e8-4aed-a977-f1be16972435 success=true
+  2026-05-19T11:21:22.078647100Z proxy PROXY_REENCRYPT 1648a079-4bbb-4a92-8d56-545bcb8c3d15 success=true
+  2026-05-19T11:21:22.081516200Z Bob DECRYPT_REENCRYPTED c11a2f36-56fe-41d8-aa1d-9afbc8c6b459 success=true
 
 === ECC-PRE Scenario ===
 Alice uploads encrypted file: success
@@ -24,10 +27,14 @@ Bob decrypts after authorization: success
 Charlie decrypts after Bob authorization: failed
 Recovered plaintext: Confidential course project document: PRE protects cloud data sharing.
 Audit log:
-  2026-05-18T16:15:54.764663Z Alice KEYGEN Alice success=true
-  2026-05-18T16:15:54.777474Z Bob KEYGEN Bob success=true
-  2026-05-18T16:15:54.784665Z Charlie KEYGEN Charlie success=true
-  2026-05-18T16:15:54.795829Z Alice UPLOAD_ENCRYPTED 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
-  2026-05-18T16:15:54.802270Z Alice AUTHORIZE Bob success=true
-  2026-05-18T16:15:54.807090Z proxy RE_ENCRYPT 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
-  2026-05-18T16:15:54.812464Z Bob DECRYPT_REENCRYPTED 1ef76a6a-cd77-4481-894f-6e962e702e8b success=true
+  2026-05-19T11:21:22.110666500Z Alice KEYGEN Alice success=true
+  2026-05-19T11:21:22.115668900Z Bob KEYGEN Bob success=true
+  2026-05-19T11:21:22.119535500Z Charlie KEYGEN Charlie success=true
+  2026-05-19T11:21:22.138215900Z Alice DATA_UPLOAD 52b8cb6c-8ee4-424c-ab74-37c7b4354af3 success=true
+  2026-05-19T11:21:22.138215900Z Alice DATA_ENCRYPT 52b8cb6c-8ee4-424c-ab74-37c7b4354af3 success=true
+  2026-05-19T11:21:22.139214500Z Alice UPLOAD_ENCRYPTED 52b8cb6c-8ee4-424c-ab74-37c7b4354af3 success=true
+  2026-05-19T11:21:22.148213300Z Bob RECIPIENT_SHARE_SUBMIT 87763a8e-0ae6-47c9-8af8-861cddb71f3a success=true
+  2026-05-19T11:21:22.148213300Z Alice GRANT_CREATE 87763a8e-0ae6-47c9-8af8-861cddb71f3a success=true
+  2026-05-19T11:21:22.148213300Z Alice REKEY_GENERATE 87763a8e-0ae6-47c9-8af8-861cddb71f3a success=true
+  2026-05-19T11:21:22.153217900Z proxy PROXY_REENCRYPT d043cb81-715d-4d3d-b350-e3b4e8c195f3 success=true
+  2026-05-19T11:21:22.159216200Z Bob DECRYPT_REENCRYPTED 52b8cb6c-8ee4-424c-ab74-37c7b4354af3 success=true

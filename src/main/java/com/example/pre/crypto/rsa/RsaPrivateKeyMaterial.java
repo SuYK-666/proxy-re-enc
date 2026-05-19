@@ -6,7 +6,6 @@ import java.math.BigInteger;
 
 public record RsaPrivateKeyMaterial(
         BigInteger modulus,
-        BigInteger privateExponent,
-        BigInteger phi
+        BigInteger privateExponent
 ) implements PrivateKeyMaterial {
 }

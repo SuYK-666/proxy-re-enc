@@ -8,11 +8,15 @@ import com.example.pre.crypto.ReEncryptionKey;
 import com.example.pre.crypto.kdf.Kdf;
 import com.example.pre.crypto.symmetric.AesGcm;
 import com.example.pre.model.AlgorithmType;
+import com.example.pre.model.CapsuleContext;
 import com.example.pre.model.UserKeyPair;
+import com.example.pre.crypto.hash.Hash;
+import com.example.pre.util.AadBuilder;
 import com.example.pre.util.Bytes;
 import com.example.pre.util.SecureRandomUtil;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 
 public final class RsaPreScheme implements PreScheme {
     private static final BigInteger TWO = BigInteger.valueOf(2);
@@ -25,6 +29,11 @@ public final class RsaPreScheme implements PreScheme {
     @Override
     public String name() {
         return "RSA-PRE";
+    }
+
+    @Override
+    public String parameterSpec() {
+        return "RSA-PRE-demo-common-modulus-" + parameters.modulus().bitLength();
     }
 
     @Override
@@ -41,39 +50,80 @@ public final class RsaPreScheme implements PreScheme {
         return new UserKeyPair(
                 userId,
                 new RsaPublicKeyMaterial(parameters.modulus(), e),
-                new RsaPrivateKeyMaterial(parameters.modulus(), d, phi)
+                new RsaPrivateKeyMaterial(parameters.modulus(), d)
         );
     }
 
     @Override
     public EncryptedKeyCapsule encapsulate(byte[] dataKey, PublicKeyMaterial ownerPublicKey) {
+        return encapsulateInternal(dataKey, ownerPublicKey, null);
+    }
+
+    @Override
+    public EncryptedKeyCapsule encapsulate(byte[] dataKey, PublicKeyMaterial ownerPublicKey, CapsuleContext context) {
+        return encapsulateInternal(dataKey, ownerPublicKey, context);
+    }
+
+    private EncryptedKeyCapsule encapsulateInternal(byte[] dataKey, PublicKeyMaterial ownerPublicKey, CapsuleContext context) {
         RsaPublicKeyMaterial publicKey = expectPublic(ownerPublicKey);
         BigInteger s = randomUnit();
         BigInteger c = s.modPow(publicKey.exponent(), publicKey.modulus());
         byte[] secret = Bytes.unsignedFixed(s, parameters.modulusBytes());
-        byte[] kek = Kdf.sha256("RSA-PRE-KEM", secret);
-        AesGcm.CipherText wrapped = AesGcm.encrypt(kek, dataKey, null);
-        return new EncryptedKeyCapsule(
-                AlgorithmType.RSA_PRE,
-                Bytes.unsignedFixed(c, parameters.modulusBytes()),
-                wrapped.ciphertext(),
-                wrapped.nonce()
-        );
+        byte[] aad = aad(context);
+        byte[] kek = Kdf.sha256(kdfLabel(context), secret);
+        try {
+            AesGcm.CipherText wrapped = AesGcm.encrypt(kek, dataKey, aad);
+            return new EncryptedKeyCapsule(
+                    AlgorithmType.RSA_PRE,
+                    Bytes.unsignedFixed(c, parameters.modulusBytes()),
+                    wrapped.ciphertext(),
+                    wrapped.nonce()
+            ).bindContext(context == null ? "" : context.ownerKeyId(), 1, hash(aad), hash(aad), parameterSpec());
+        } finally {
+            Arrays.fill(secret, (byte) 0);
+            Arrays.fill(kek, (byte) 0);
+        }
     }
 
     @Override
     public byte[] decapsulate(EncryptedKeyCapsule capsule, PrivateKeyMaterial privateKey) {
+        return decapsulateInternal(capsule, privateKey, null);
+    }
+
+    @Override
+    public byte[] decapsulate(EncryptedKeyCapsule capsule, PrivateKeyMaterial privateKey, CapsuleContext context) {
+        validateCapsule(capsule, context);
+        return decapsulateInternal(capsule, privateKey, context);
+    }
+
+    private byte[] decapsulateInternal(EncryptedKeyCapsule capsule, PrivateKeyMaterial privateKey, CapsuleContext context) {
         requireRsaCapsule(capsule);
         RsaPrivateKeyMaterial key = expectPrivate(privateKey);
         BigInteger c = Bytes.positiveBigInteger(capsule.header());
         BigInteger s = c.modPow(key.privateExponent(), key.modulus());
         byte[] secret = Bytes.unsignedFixed(s, parameters.modulusBytes());
-        byte[] kek = Kdf.sha256("RSA-PRE-KEM", secret);
-        return AesGcm.decrypt(kek, capsule.keyNonce(), capsule.wrappedKey(), null);
+        byte[] aad = aad(context);
+        byte[] kek = Kdf.sha256(kdfLabel(context), secret);
+        try {
+            return AesGcm.decrypt(kek, capsule.keyNonce(), capsule.wrappedKey(), aad);
+        } finally {
+            Arrays.fill(secret, (byte) 0);
+            Arrays.fill(kek, (byte) 0);
+        }
     }
 
     @Override
     public EncryptedKeyCapsule reEncrypt(EncryptedKeyCapsule originalCapsule, ReEncryptionKey reKey) {
+        return reEncryptInternal(originalCapsule, reKey);
+    }
+
+    @Override
+    public EncryptedKeyCapsule reEncrypt(EncryptedKeyCapsule originalCapsule, ReEncryptionKey reKey, CapsuleContext context) {
+        validateCapsule(originalCapsule, context);
+        return reEncryptInternal(originalCapsule, reKey);
+    }
+
+    private EncryptedKeyCapsule reEncryptInternal(EncryptedKeyCapsule originalCapsule, ReEncryptionKey reKey) {
         requireRsaCapsule(originalCapsule);
         if (!(reKey instanceof RsaReEncryptionKey key)) {
             throw new IllegalArgumentException("expected RSA re-encryption key");
@@ -85,11 +135,19 @@ public final class RsaPreScheme implements PreScheme {
                 Bytes.unsignedFixed(transformed, parameters.modulusBytes()),
                 originalCapsule.wrappedKey(),
                 originalCapsule.keyNonce()
-        );
+        ).bindContext(originalCapsule.ownerKeyId(), originalCapsule.ownerKeyVersion(), originalCapsule.aadHash(),
+                originalCapsule.contextHash(), originalCapsule.parameterSpec());
     }
 
     public RsaCommonModulusParameters parameters() {
         return parameters;
+    }
+
+    public ReEncryptionKey generateBaselineReEncryptionKey(
+            RsaPrivateKeyMaterial ownerPrivateKey,
+            RsaPublicKeyMaterial recipientPublicKey
+    ) {
+        return new RsaReKeyGenerator().generateReEncryptionKey(ownerPrivateKey, recipientPublicKey, parameters.phi());
     }
 
     private BigInteger randomUnit() {
@@ -119,5 +177,29 @@ public final class RsaPreScheme implements PreScheme {
         if (capsule.algorithm() != AlgorithmType.RSA_PRE) {
             throw new IllegalArgumentException("expected RSA capsule");
         }
+    }
+
+    @Override
+    public void validateCapsule(EncryptedKeyCapsule capsule, CapsuleContext context) {
+        requireRsaCapsule(capsule);
+        byte[] aad = aad(context);
+        String expected = hash(aad);
+        if (context != null && !capsule.aadHash().isBlank() && !expected.equals(capsule.aadHash())) {
+            throw new IllegalArgumentException("capsule AAD hash mismatch");
+        }
+    }
+
+    private static byte[] aad(CapsuleContext context) {
+        return context == null ? null : AadBuilder.build(context);
+    }
+
+    private static String kdfLabel(CapsuleContext context) {
+        return context == null
+                ? "ReKeyShare|RSA-PRE|DEK-WRAP|v1"
+                : "ReKeyShare|RSA-PRE|DEK-WRAP|v1|" + AadBuilder.buildString(context);
+    }
+
+    private static String hash(byte[] aad) {
+        return aad == null ? "" : Hash.sha256Hex(aad);
     }
 }

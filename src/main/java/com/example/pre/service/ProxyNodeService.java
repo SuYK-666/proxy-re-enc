@@ -1,0 +1,57 @@
+package com.example.pre.service;
+
+import com.example.pre.model.ProxyNode;
+import com.example.pre.model.ProxyNodeStatus;
+import com.example.pre.model.UserRole;
+import com.example.pre.storage.AuditRepository;
+
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class ProxyNodeService {
+    private final Map<String, ProxyNode> nodes = new ConcurrentHashMap<>();
+    private final AuditRepository audit;
+
+    public ProxyNodeService(AuditRepository audit) {
+        this.audit = audit;
+    }
+
+    public ProxyNode register(String adminActor, String proxyId, String certificateFingerprint, Set<String> allowedTenantIds) {
+        ProxyNode node = ProxyNode.active(proxyId, certificateFingerprint, allowedTenantIds);
+        nodes.put(proxyId, node);
+        audit.record(new com.example.pre.model.AuditEvent(Instant.now(), adminActor, "PROXY_NODE_REGISTER", proxyId, true, certificateFingerprint));
+        return node;
+    }
+
+    public ProxyNode revoke(String adminActor, String proxyId) {
+        ProxyNode node = nodes.get(proxyId);
+        if (node == null) {
+            throw new ReKeyShareException(ErrorCode.INVALID_REQUEST, "proxy node not found");
+        }
+        ProxyNode revoked = node.revoke();
+        nodes.put(proxyId, revoked);
+        audit.record(new com.example.pre.model.AuditEvent(Instant.now(), adminActor, "PROXY_NODE_REVOKE", proxyId, true, "revoked"));
+        return revoked;
+    }
+
+    public void assertCanProxy(SecurityContext context) {
+        if (context == null || context.role() != UserRole.PROXY) {
+            throw new ReKeyShareException(ErrorCode.ACCESS_DENIED, "proxy role is required");
+        }
+        ProxyNode node = nodes.get(context.userId());
+        if (node == null || node.status() != ProxyNodeStatus.ACTIVE) {
+            throw new ReKeyShareException(ErrorCode.ACCESS_DENIED, "proxy node is not active");
+        }
+        if (!node.allowedTenantIds().contains("*") && !node.allowedTenantIds().contains(context.tenantId())) {
+            throw new ReKeyShareException(ErrorCode.ACCESS_DENIED, "proxy node is not allowed for tenant");
+        }
+        nodes.put(context.userId(), node.seen());
+    }
+
+    public Collection<ProxyNode> findAll() {
+        return java.util.List.copyOf(nodes.values());
+    }
+}

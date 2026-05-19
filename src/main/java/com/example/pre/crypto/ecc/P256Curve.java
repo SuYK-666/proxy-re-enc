@@ -99,6 +99,9 @@ public final class P256Curve {
         }
         BigInteger x = Bytes.positiveBigInteger(Arrays.copyOfRange(encoded, 1, 1 + FIELD_BYTES));
         BigInteger y = Bytes.positiveBigInteger(Arrays.copyOfRange(encoded, 1 + FIELD_BYTES, encoded.length));
+        if (x.signum() < 0 || x.compareTo(P) >= 0 || y.signum() < 0 || y.compareTo(P) >= 0) {
+            throw new IllegalArgumentException("P-256 point coordinates must be canonical field elements");
+        }
         EccPoint point = EccPoint.of(x, y);
         if (!isOnCurve(point)) {
             throw new IllegalArgumentException("point is not on P-256");

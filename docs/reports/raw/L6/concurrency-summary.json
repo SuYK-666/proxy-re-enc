@@ -1,0 +1,6 @@
+﻿{
+  "CON-01":"covered by synchronized download check-and-count path; API maxDownloadCount=1 returned secondDownloadStatus=403",
+  "CON-02":"covered by synchronized proxy re-encrypt check-and-count path",
+  "CON-05":"self-test audit verification PASS for RSA/ECC chains",
+  "raw":["docs/reports/raw/L3/api-authz-results.json","docs/reports/raw/L10/self-test-output.txt"]
+}

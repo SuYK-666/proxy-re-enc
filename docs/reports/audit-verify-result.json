@@ -1,0 +1,13 @@
+{
+  "validResult": {
+    "valid": true,
+    "checkedEvents": 22,
+    "brokenAt": null,
+    "rootHash": "70d0f2b8236574768ceff517aa69938a3e25333d8da6ef94d41d3dc367a01a70"
+  },
+  "tamperedResult": {
+    "valid": false,
+    "checkedEvents": 22,
+    "brokenAt": "event-0007"
+  }
+}

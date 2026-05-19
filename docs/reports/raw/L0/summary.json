@@ -1,0 +1,9 @@
+﻿{
+  "test":"L0 build and static quality",
+  "javacMain":"PASS",
+  "mavenTest":"BLOCKED_ENV_MVN_NOT_FOUND",
+  "spotbugs":"CONFIGURED_IN_POM_AND_CI_BLOCKED_ENV_MVN_NOT_FOUND",
+  "dependencyCheck":"CONFIGURED_IN_POM_AND_CI_BLOCKED_ENV_MVN_NOT_FOUND",
+  "jacoco":"CONFIGURED_IN_POM_AND_CI_BLOCKED_ENV_MVN_NOT_FOUND",
+  "raw":["docs/reports/raw/L0/javac-main.txt","docs/reports/raw/L0/mvn-test.txt"]
+}

@@ -1,0 +1,8 @@
+﻿{
+    "missingTokenStatus":  401,
+    "headerSpoofRecipient":  "bob",
+    "formalResponseHasPlaintext":  false,
+    "secondDownloadStatus":  403,
+    "badJsonStatus":  400,
+    "afterRevokeStatus":  403
+}
