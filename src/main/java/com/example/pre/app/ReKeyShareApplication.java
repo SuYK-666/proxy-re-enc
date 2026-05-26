@@ -5,6 +5,8 @@ import com.example.pre.crypto.EncryptedKeyCapsule;
 import com.example.pre.crypto.ecc.EccPreScheme;
 import com.example.pre.crypto.rsa.RsaCommonModulusParameters;
 import com.example.pre.crypto.rsa.RsaPreScheme;
+import com.example.pre.crypto.provider.SchemeDescriptor;
+import com.example.pre.crypto.provider.CryptoProviderRegistry;
 import com.example.pre.model.AccessPolicy;
 import com.example.pre.model.AlgorithmType;
 import com.example.pre.model.AuditEvent;
@@ -14,6 +16,7 @@ import com.example.pre.model.ReEncryptedPackage;
 import com.example.pre.model.RecipientShareSubmission;
 import com.example.pre.model.ReKeySession;
 import com.example.pre.model.ShareGrant;
+import com.example.pre.model.SharedPackageV2;
 import com.example.pre.model.User;
 import com.example.pre.model.UserRole;
 import com.example.pre.service.AuditService;
@@ -28,6 +31,7 @@ import com.example.pre.service.EccRecipientShareService;
 import com.example.pre.service.ErrorCode;
 import com.example.pre.service.KeyManagementService;
 import com.example.pre.service.ObjectAuthorizationService;
+import com.example.pre.service.PackageVerifier;
 import com.example.pre.service.ProxyReEncryptionService;
 import com.example.pre.service.ProxyNodeService;
 import com.example.pre.service.ReKeyShareException;
@@ -96,6 +100,11 @@ public final class ReKeyShareApplication {
     public static RunningServer start(int requestedPort, RuntimeProfile profile) throws IOException {
         ApiState state = new ApiState(profile);
         HttpServer server = HttpServer.create(new InetSocketAddress(requestedPort), 0);
+        server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool(runnable -> {
+            Thread thread = new Thread(runnable, "rekeyshare-http-worker");
+            thread.setDaemon(true);
+            return thread;
+        }));
         server.createContext("/", exchange -> route(exchange, state));
         server.start();
         return new RunningServer(server, server.getAddress().getPort());
@@ -111,6 +120,7 @@ public final class ReKeyShareApplication {
                 path = "/api/" + path.substring("/api/v1/".length());
             }
             String method = exchange.getRequestMethod();
+            enforceContentType(exchange, method);
             enforceIdempotency(exchange, state, method, path);
             Map<String, String> body = readFields(exchange);
             DemoTokenService.AuthenticatedActor auth = publicEndpoint(method, path)
@@ -130,8 +140,9 @@ public final class ReKeyShareApplication {
             } else if ("GET".equals(method) && "/api/users".equals(path)) {
                 writeJson(exchange, 200, "{\"count\":" + state.users.findAll().size() + "}");
             } else if ("POST".equals(method) && path.matches("/api/users/[^/]+/keys")) {
-                createKey(exchange, state, segment(path, 3));
+                createKey(exchange, state, auth, segment(path, 3));
             } else if ("POST".equals(method) && path.matches("/api/users/[^/]+/keys/rotate")) {
+                requireDemoFeature(state, path);
                 rotateUserKey(exchange, state, actor, segment(path, 3));
             } else if ("POST".equals(method) && "/api/data/upload".equals(path)) {
                 requireDemoFeature(state, path);
@@ -153,10 +164,10 @@ public final class ReKeyShareApplication {
             } else if ("POST".equals(method) && path.matches("/api/rekey-sessions/[^/]+/recipient-share")) {
                 submitRecipientShare(exchange, state, actor, segment(path, 3), body);
             } else if ("POST".equals(method) && path.matches("/api/rekey-sessions/[^/]+/recipient-share-demo")) {
+                requireDemoFeature(state, path);
                 submitRecipientShareDemo(exchange, state, actor, segment(path, 3));
             } else if ("POST".equals(method) && "/api/proxy/re-encrypt".equals(path)) {
                 requireRole(auth, UserRole.PROXY);
-                state.proxyNodes.assertCanProxy(security);
                 proxyReEncrypt(exchange, state, security, body);
             } else if ("POST".equals(method) && "/api/proxy-nodes".equals(path)) {
                 requireAdmin(auth);
@@ -201,14 +212,14 @@ public final class ReKeyShareApplication {
             } else if ("POST".equals(method) && "/api/benchmark/run".equals(path)) {
                 requireAdmin(auth);
                 BenchmarkApplication.main(new String[0]);
-                state.audit.record("benchmark", "BENCHMARK_RUN", "docs/reports/performance-results.csv", true, "api");
-                writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"result\":\"docs/reports/performance-results.csv\"}");
+                state.audit.record("benchmark", "BENCHMARK_RUN", "docs/reports/raw/e02-algorithm-benchmark.csv", true, "api");
+                writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"result\":\"docs/reports/raw/e02-algorithm-benchmark.csv\"}");
             } else if ("GET".equals(method) && "/api/benchmark/results".equals(path)) {
                 requireAdmin(auth);
-                writeJson(exchange, 200, "{\"code\":\"SUCCESS\",\"result\":\"docs/reports/performance-results.csv\"}");
+                writeJson(exchange, 200, "{\"code\":\"SUCCESS\",\"result\":\"docs/reports/raw/e02-algorithm-benchmark.csv\"}");
             } else if ("GET".equals(method) && "/api/benchmark/summary".equals(path)) {
                 requireAdmin(auth);
-                writeJson(exchange, 200, state.benchmark.summaryJson(Path.of("docs", "reports", "performance-results.csv")));
+                writeJson(exchange, 200, state.benchmark.summaryJson(Path.of("docs", "reports", "raw", "e02-algorithm-benchmark.csv")));
             } else if ("POST".equals(method) && "/api/storage/export".equals(path)) {
                 requireAdmin(auth);
                 Path output = Path.of("storage", "exports", "rekeyshare-snapshot.json");
@@ -245,7 +256,7 @@ public final class ReKeyShareApplication {
         } catch (IllegalArgumentException e) {
             writeJson(exchange, 400, errorJson(ErrorCode.INVALID_REQUEST.name(), e.getMessage(), requestId));
         } catch (Exception e) {
-            writeJson(exchange, 500, errorJson("INTERNAL_ERROR", e.getMessage(), requestId));
+            writeJson(exchange, 500, errorJson("INTERNAL_ERROR", "internal server error", requestId));
         }
     }
 
@@ -253,7 +264,9 @@ public final class ReKeyShareApplication {
         String userId = body.getOrDefault("userId", body.getOrDefault("username", "user-" + state.users.findAll().size()));
         AlgorithmType algorithm = state.registry.parse(body.get("algorithm"), AlgorithmType.RSA_PRE);
         UserRole role = parseRole(body.get("role"), defaultRole(userId));
-        User user = state.userService(algorithm).createUser(userId, role);
+        User user = state.profile.demoFeaturesEnabled()
+                ? state.userService(algorithm).createUser(userId, role)
+                : state.userService(algorithm).registerPublicOnlyUser(userId, role);
         state.keys(algorithm).registerActiveKey(user);
         String token = state.tokens.issue(user);
         writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"userId\":\"" + json(user.userId())
@@ -268,7 +281,11 @@ public final class ReKeyShareApplication {
                 + "\",\"role\":\"" + user.role() + "\",\"token\":\"" + state.tokens.issue(user) + "\"}");
     }
 
-    private static void createKey(HttpExchange exchange, ApiState state, String userId) throws IOException {
+    private static void createKey(HttpExchange exchange, ApiState state, DemoTokenService.AuthenticatedActor actor,
+                                  String userId) throws IOException {
+        if (!actor.userId().equals(userId) && actor.role() != UserRole.ADMIN) {
+            throw new ReKeyShareException(ErrorCode.ACCESS_DENIED, "only key owner or admin can register key metadata");
+        }
         User user = state.users.findById(userId)
                 .orElseThrow(() -> new ReKeyShareException(ErrorCode.USER_NOT_FOUND, "user not found"));
         var key = state.keys(state.algorithmForUser(user)).registerActiveKey(user);
@@ -461,6 +478,7 @@ public final class ReKeyShareApplication {
     private static void proxyReEncrypt(HttpExchange exchange, ApiState state, SecurityContext actor, Map<String, String> body) throws IOException {
         ShareGrant grant = state.grants.findById(body.get("grantId"))
                 .orElseThrow(() -> new ReKeyShareException(ErrorCode.GRANT_NOT_FOUND, "grant not found"));
+        state.proxyNodes.assertCanProxy(actor, grant.algorithm());
         ReEncryptedPackage dataPackage = state.proxy(grant.algorithm()).reEncrypt(actor, body.get("grantId"));
         writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"packageId\":\"" + dataPackage.packageId() + "\",\"grantId\":\"" + dataPackage.grantId() + "\"}");
     }
@@ -469,7 +487,14 @@ public final class ReKeyShareApplication {
         String proxyId = body.getOrDefault("proxyId", "proxy");
         String fingerprint = body.getOrDefault("certificateFingerprint", "demo-service-token");
         String tenants = body.getOrDefault("allowedTenantIds", "*");
-        state.proxyNodes.register(actor, proxyId, fingerprint, Set.of(tenants.split(",")));
+        Set<AlgorithmType> allowedSchemes = java.util.Arrays.stream(
+                        body.getOrDefault("allowedSchemeIds", "RSA_PRE,ECC_PRE,SECURE_ENVELOPE").split(","))
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .map(AlgorithmType::valueOf)
+                .collect(java.util.stream.Collectors.toSet());
+        long quota = Long.parseLong(body.getOrDefault("quota", String.valueOf(Long.MAX_VALUE)));
+        state.proxyNodes.register(actor, proxyId, fingerprint, Set.of(tenants.split(",")), allowedSchemes, quota);
         writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"proxyId\":\"" + json(proxyId) + "\",\"status\":\"ACTIVE\"}");
     }
 
@@ -480,14 +505,21 @@ public final class ReKeyShareApplication {
 
     private static void getSharedPackage(HttpExchange exchange, ApiState state, String actor, String packageId) throws IOException {
         ReEncryptedPackage dataPackage;
+        ShareGrant grant;
         synchronized (state.grants) {
             dataPackage = state.objectAuth.assertCanDownloadPackage(actor, packageId);
-            ShareGrant grant = state.grants.findById(dataPackage.grantId())
+            grant = state.grants.findById(dataPackage.grantId())
                     .orElseThrow(() -> new ReKeyShareException(ErrorCode.GRANT_NOT_FOUND, "grant not found"));
             state.grants.save(grant.incrementDownload());
         }
+        SharedPackageV2 v2 = SharedPackageV2.issue(dataPackage, descriptorFor(dataPackage.algorithm()), grant.expiresAt());
+        new PackageVerifier().verify(v2, Instant.now());
         state.audit.record(actor, "DOWNLOAD_PACKAGE", packageId, true, dataPackage.grantId());
-        writeJson(exchange, 200, "{\"code\":\"SUCCESS\",\"packageId\":\"" + packageId
+        writeJson(exchange, 200, "{\"code\":\"SUCCESS\",\"packageVersion\":\"" + v2.packageVersion()
+                + "\",\"schemeId\":\"" + v2.schemeId()
+                + "\",\"parameterSpec\":\"" + json(v2.parameterSpec())
+                + "\",\"proofStatus\":\"" + v2.proofStatus()
+                + "\",\"packageId\":\"" + packageId
                 + "\",\"dataId\":\"" + dataPackage.dataId()
                 + "\",\"ownerId\":\"" + dataPackage.ownerId()
                 + "\",\"recipientId\":\"" + dataPackage.recipientId()
@@ -509,6 +541,10 @@ public final class ReKeyShareApplication {
                 + "\",\"policyHash\":\"" + dataPackage.policyHash()
                 + "\",\"grantPolicyHash\":\"" + dataPackage.grantPolicyHash()
                 + "\",\"grantContextHash\":\"" + dataPackage.grantContextHash()
+                + "\",\"manifestHash\":\"" + v2.manifest().manifestHash()
+                + "\",\"ciphertextHash\":\"" + v2.manifest().ciphertextHash()
+                + "\",\"aadHash\":\"" + v2.manifest().aadHash()
+                + "\",\"capsuleHash\":\"" + v2.manifest().capsuleHash()
                 + "\",\"status\":\"" + dataPackage.status() + "\"}");
     }
 
@@ -608,6 +644,21 @@ public final class ReKeyShareApplication {
         }
     }
 
+    private static void enforceContentType(HttpExchange exchange, String method) {
+        if (!"POST".equals(method)) {
+            return;
+        }
+        String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+        if (contentType == null || contentType.isBlank()) {
+            throw new ReKeyShareException(ErrorCode.INVALID_REQUEST, "Content-Type is required for POST requests");
+        }
+        String normalized = contentType.toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.startsWith("application/json")
+                && !normalized.startsWith("application/x-www-form-urlencoded")) {
+            throw new ReKeyShareException(ErrorCode.INVALID_REQUEST, "unsupported Content-Type");
+        }
+    }
+
     private static UserRole parseRole(String value, UserRole fallback) {
         if (value == null || value.isBlank()) {
             return fallback;
@@ -696,7 +747,7 @@ public final class ReKeyShareApplication {
             case UNAUTHENTICATED -> 401;
             case RATE_LIMITED -> 429;
             case PAYLOAD_TOO_LARGE -> 413;
-            case INVALID_REQUEST, ALGORITHM_MISMATCH, CAPSULE_TAMPERED, CIPHERTEXT_TAMPERED,
+            case INVALID_REQUEST, ALGORITHM_MISMATCH, CAPSULE_TAMPERED, CIPHERTEXT_TAMPERED, PACKAGE_INVALID,
                     INVALID_RECIPIENT_SHARE, INVALID_REKEY_SESSION -> 400;
             default -> 403;
         };
@@ -707,8 +758,11 @@ public final class ReKeyShareApplication {
     }
 
     private static String errorJson(String code, String message, String requestId) {
-        return "{\"success\":false,\"code\":\"" + json(code) + "\",\"message\":\"" + json(message)
-                + "\",\"requestId\":\"" + json(requestId) + "\"}";
+        String eventId = "err-" + UUID.randomUUID();
+        return "{\"success\":false,\"errorCode\":\"" + json(code) + "\",\"code\":\"" + json(code)
+                + "\",\"message\":\"" + json(message) + "\",\"traceId\":\"" + json(requestId)
+                + "\",\"requestId\":\"" + json(requestId) + "\",\"eventId\":\"" + eventId
+                + "\",\"timestamp\":\"" + Instant.now() + "\"}";
     }
 
     private static String b64(byte[] value) {
@@ -722,6 +776,20 @@ public final class ReKeyShareApplication {
         return Base64.getDecoder().decode(value);
     }
 
+    private static SchemeDescriptor descriptorFor(AlgorithmType algorithm) {
+        return switch (algorithm) {
+            case RSA_PRE -> new SchemeDescriptor("RSA_PRE_BASELINE", "RSA common-modulus transformation",
+                    "EXPERIMENTAL", "RSA-PRE-baseline", true, true, false,
+                    "NOT_PRODUCTION_REVIEWED", "IMPLEMENTED");
+            case ECC_PRE -> new SchemeDescriptor("ECC_PRE_BASELINE", "Experimental P-256 transformation",
+                    "EXPERIMENTAL", "ECC-PRE-P-256-demo", true, true, false,
+                    "NOT_PRODUCTION_REVIEWED", "IMPLEMENTED");
+            case SECURE_ENVELOPE -> new SchemeDescriptor("SECURE_ENVELOPE_V1", "ECDH-KEM envelope",
+                    "128-bit", "P-256/HKDF-SHA256/AES-256-GCM", false, false, false,
+                    "JCA_PRIMITIVES_SECURITY_BOUNDARY_DOCUMENTED", "IMPLEMENTED");
+        };
+    }
+
     private static String openApiJson(RuntimeProfile profile) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\"openapi\":\"3.0.3\",")
@@ -731,7 +799,9 @@ public final class ReKeyShareApplication {
         appendPath(sb, "/api/users", "post", false, "Create user and issue demo token");
         appendPath(sb, "/api/auth/login", "post", false, "Issue signed demo token");
         appendPath(sb, "/api/users/{userId}/keys", "post", true, "Register current public key metadata");
-        appendPath(sb, "/api/users/{userId}/keys/rotate", "post", true, "Generate a real new user keypair");
+        if (profile.demoFeaturesEnabled()) {
+            appendPath(sb, "/api/users/{userId}/keys/rotate", "post", true, "Demo-only service-side keypair rotation");
+        }
         if (profile.demoFeaturesEnabled()) {
             appendPath(sb, "/api/data/upload", "post", true, "Demo-only plaintext upload fixture");
         }
@@ -789,6 +859,7 @@ public final class ReKeyShareApplication {
     private static final class ApiState {
         final RuntimeProfile profile;
         final SchemeRegistry registry = new SchemeRegistry();
+        final CryptoProviderRegistry cryptoProviders = new CryptoProviderRegistry();
         final DemoTokenService tokens = new DemoTokenService("rekeyshare-demo-signing-secret", 3600);
         final InMemoryAuditRepository auditRepository = new InMemoryAuditRepository();
         final InMemoryUserRepository users = new InMemoryUserRepository();
@@ -809,6 +880,9 @@ public final class ReKeyShareApplication {
 
         ApiState(RuntimeProfile profile) {
             this.profile = profile;
+            if (profile == RuntimeProfile.PRODUCTION) {
+                cryptoProviders.productionDefault();
+            }
             audit.record("system", "API_START", "ReKeyShareApplication", true, "profile=" + profile);
             proxyNodes.register("system", "proxy", "default-service-token", Set.of("*"));
         }

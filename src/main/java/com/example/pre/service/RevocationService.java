@@ -4,6 +4,7 @@ import com.example.pre.crypto.PreScheme;
 import com.example.pre.model.EncryptedDataPackage;
 import com.example.pre.model.AuditEvent;
 import com.example.pre.model.PackageStatus;
+import com.example.pre.model.GrantStatus;
 import com.example.pre.model.ShareGrant;
 import com.example.pre.model.User;
 import com.example.pre.storage.AuditRepository;
@@ -48,12 +49,18 @@ public final class RevocationService {
     }
 
     public ShareGrant revokeGrant(String ownerId, String grantId) {
-        ShareGrant grant = authorization.assertCanRevokeGrant(ownerId, grantId).revoke();
+        ShareGrant existing = authorization.assertCanRevokeGrant(ownerId, grantId);
+        new StateTransitionGuard().grant(existing.status(), GrantStatus.REVOKED);
+        ShareGrant grant = existing.revoke();
         grantRepository.save(grant);
         if (packageRepository != null) {
             packageRepository.findAll().stream()
                     .filter(dataPackage -> grantId.equals(dataPackage.grantId()))
-                    .forEach(dataPackage -> packageRepository.save(dataPackage.invalidate(PackageStatus.INVALIDATED, "grant revoked")));
+                    .filter(dataPackage -> dataPackage.status() == PackageStatus.ACTIVE)
+                    .forEach(dataPackage -> {
+                        new StateTransitionGuard().dataPackage(dataPackage.status(), PackageStatus.INVALIDATED);
+                        packageRepository.save(dataPackage.invalidate(PackageStatus.INVALIDATED, "grant revoked"));
+                    });
         }
         audit.record(new AuditEvent(Instant.now(), ownerId, "GRANT_REVOKE", grantId, true, "soft revoke"));
         return grant;
@@ -72,12 +79,19 @@ public final class RevocationService {
             throw new ReKeyShareException(ErrorCode.ALGORITHM_MISMATCH, "owner-side rotation algorithm mismatch");
         }
         for (ShareGrant grant : grantRepository.findByDataId(current.dataId())) {
-            grantRepository.save(grant.rotate());
+            if (grant.status() == GrantStatus.ACTIVE) {
+                new StateTransitionGuard().grant(grant.status(), GrantStatus.ROTATED);
+                grantRepository.save(grant.rotate());
+            }
         }
         if (packageRepository != null) {
             packageRepository.findAll().stream()
                     .filter(dataPackage -> current.dataId().equals(dataPackage.dataId()))
-                    .forEach(dataPackage -> packageRepository.save(dataPackage.invalidate(PackageStatus.ROTATED, "owner-side content key rotated")));
+                    .filter(dataPackage -> dataPackage.status() == PackageStatus.ACTIVE)
+                    .forEach(dataPackage -> {
+                        new StateTransitionGuard().dataPackage(dataPackage.status(), PackageStatus.ROTATED);
+                        packageRepository.save(dataPackage.invalidate(PackageStatus.ROTATED, "owner-side content key rotated"));
+                    });
         }
         dataRepository.save(preparedRotation);
         audit.record(new AuditEvent(Instant.now(), owner.userId(), "KEY_ROTATE_OWNER_SIDE", current.dataId(), true,

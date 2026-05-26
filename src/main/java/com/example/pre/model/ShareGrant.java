@@ -93,6 +93,12 @@ public record ShareGrant(
                 createdAt, expiresAt, revokedAt, revokeReason, contentKeyVersion);
     }
 
+    public ShareGrant withReKey(ReEncryptionKey scopedReKey) {
+        return new ShareGrant(grantId, dataId, ownerId, recipientId, algorithm, status, policy, policyHash, scopedReKey,
+                accessCount, reEncryptCount, downloadCount, decryptCount, previewCount,
+                createdAt, expiresAt, revokedAt, revokeReason, contentKeyVersion);
+    }
+
     public ShareGrant revoke() {
         return new ShareGrant(grantId, dataId, ownerId, recipientId, algorithm, GrantStatus.REVOKED, policy, policyHash,
                 reKey, accessCount, reEncryptCount, downloadCount, decryptCount, previewCount,

@@ -44,6 +44,10 @@ public final class AesGcmNonceManager {
         }
     }
 
+    static synchronized void clearMemoryForRestartTest() {
+        USED_NONCES.clear();
+    }
+
     private static void loadRegistry() {
         if (!Files.exists(REGISTRY)) {
             return;

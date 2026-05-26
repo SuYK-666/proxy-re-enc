@@ -9,8 +9,7 @@
     <name>proxy-re-enc</name>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
     </properties>
@@ -52,11 +51,34 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <exclude>**/DemoApplication*</exclude>
+                        <exclude>**/SelfTestApplication*</exclude>
+                        <exclude>**/AuditTamperApplication*</exclude>
+                        <exclude>**/EvidenceExperimentApplication*</exclude>
+                        <exclude>**/ConcurrencyExperimentApplication*</exclude>
+                        <exclude>**/ComplianceExperimentApplication*</exclude>
+                        <exclude>**/HealthCheckApplication*</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
+                        <configuration>
+                            <includes>
+                                <include>com/example/pre/*</include>
+                            </includes>
+                            <excludes combine.children="append">
+                                <exclude>java/*</exclude>
+                                <exclude>javax/*</exclude>
+                                <exclude>jdk/*</exclude>
+                                <exclude>sun/*</exclude>
+                                <exclude>com/sun/*</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>report</id>
@@ -97,6 +119,14 @@
                     <threshold>High</threshold>
                     <failOnError>true</failOnError>
                 </configuration>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.owasp</groupId>
@@ -105,6 +135,19 @@
                 <configuration>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>2.8.1</version>
+                <executions>
+                    <execution>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

@@ -4,6 +4,18 @@ services:
     container_name: rekeyshare-api
     ports:
       - "8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REKEYSHARE_PROFILE: production
     volumes:
       - ./storage:/app/storage
       - ./docs/reports:/app/docs/reports
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"

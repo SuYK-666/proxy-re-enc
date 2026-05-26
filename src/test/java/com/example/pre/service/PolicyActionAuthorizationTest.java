@@ -82,7 +82,8 @@ class PolicyActionAuthorizationTest {
                 pkg.grantAad(),
                 pkg.status(),
                 pkg.invalidatedAt(),
-                pkg.invalidatedReason()
+                pkg.invalidatedReason(),
+                pkg.issuedManifestHash()
         );
         f.packageRepository.save(tampered);
 

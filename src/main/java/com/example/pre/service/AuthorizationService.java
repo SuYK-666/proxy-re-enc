@@ -2,6 +2,7 @@ package com.example.pre.service;
 
 import com.example.pre.crypto.PreScheme;
 import com.example.pre.crypto.ReEncryptionKey;
+import com.example.pre.crypto.ScopedReEncryptionKey;
 import com.example.pre.crypto.ecc.EccInteractiveReKeyGenerator;
 import com.example.pre.crypto.ecc.EccPrivateKeyMaterial;
 import com.example.pre.crypto.ecc.EccPublicKeyMaterial;
@@ -61,6 +62,7 @@ public final class AuthorizationService {
                 createReKey(owner, recipient),
                 dataPackage.contentKeyVersion()
         );
+        grant = bindReKeyScope(grant);
         saveGrant(grant);
         audit.record(new AuditEvent(Instant.now(), owner.userId(), "GRANT_CREATE", grant.grantId(), true, policyHash));
         audit.record(new AuditEvent(Instant.now(), owner.userId(), "REKEY_GENERATE", grant.grantId(), true, scheme.name()));
@@ -87,6 +89,7 @@ public final class AuthorizationService {
         ReEncryptionKey reKey = new EccInteractiveReKeyGenerator().generateReEncryptionKey(ownerPrivate, recipientPublic, share, context);
         ShareGrant grant = ShareGrant.active(dataPackage.dataId(), owner.userId(), recipient.userId(), dataPackage.algorithm(),
                 policy, policyHash, reKey, dataPackage.contentKeyVersion());
+        grant = bindReKeyScope(grant);
         saveGrant(grant);
         audit.record(new AuditEvent(Instant.now(), recipient.userId(), "RECIPIENT_SHARE_SUBMIT", grant.grantId(), true, "private-key-local"));
         audit.record(new AuditEvent(Instant.now(), owner.userId(), "GRANT_CREATE", grant.grantId(), true, policyHash));
@@ -116,6 +119,10 @@ public final class AuthorizationService {
     }
 
     public ReEncryptionKey createReKey(User owner, User recipient) {
+        if (owner.keyPair().privateKey() == null) {
+            throw new ReKeyShareException(ErrorCode.CLIENT_KEY_REQUIRED,
+                    "production grant requires client-generated re-encryption material");
+        }
         if (owner.keyPair().privateKey() instanceof RsaPrivateKeyMaterial ownerPrivate
                 && recipient.keyPair().publicKey() instanceof RsaPublicKeyMaterial recipientPublic) {
             if (!(scheme instanceof RsaPreScheme rsaScheme)) {
@@ -135,6 +142,12 @@ public final class AuthorizationService {
             throw new IllegalStateException("GrantRepository is required for lifecycle grants");
         }
         grants.save(grant);
+    }
+
+    private static ShareGrant bindReKeyScope(ShareGrant grant) {
+        return grant.withReKey(new ScopedReEncryptionKey(grant.reKey(), grant.grantId(), grant.dataId(),
+                grant.recipientId(), grant.contentKeyVersion(), grant.policyHash(), grant.expiresAt(),
+                grant.policy().maxReEncryptCount()));
     }
 
     private com.example.pre.model.AlgorithmType schemeFromUser(User owner) {

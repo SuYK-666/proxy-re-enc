@@ -27,7 +27,8 @@ public record ReEncryptedPackage(
         byte[] grantAad,
         PackageStatus status,
         Instant invalidatedAt,
-        String invalidatedReason
+        String invalidatedReason,
+        String issuedManifestHash
 ) {
     public ReEncryptedPackage(
             String dataId,
@@ -62,6 +63,7 @@ public record ReEncryptedPackage(
                 new byte[0],
                 PackageStatus.ACTIVE,
                 null,
+                "",
                 ""
         );
     }
@@ -69,6 +71,14 @@ public record ReEncryptedPackage(
     public ReEncryptedPackage invalidate(PackageStatus newStatus, String reason) {
         return new ReEncryptedPackage(packageId, grantId, dataId, ownerId, recipientId, algorithm, encryptedContent,
                 contentNonce, aad, reEncryptedCapsule, authorizedAt, contentKeyVersion, ciphertextStoragePath,
-                ownerKeyId, policyHash, grantPolicyHash, ownerContextHash, grantContextHash, grantAad, newStatus, Instant.now(), reason);
+                ownerKeyId, policyHash, grantPolicyHash, ownerContextHash, grantContextHash, grantAad, newStatus,
+                Instant.now(), reason, issuedManifestHash);
+    }
+
+    public ReEncryptedPackage withIssuedManifestHash(String hash) {
+        return new ReEncryptedPackage(packageId, grantId, dataId, ownerId, recipientId, algorithm, encryptedContent,
+                contentNonce, aad, reEncryptedCapsule, authorizedAt, contentKeyVersion, ciphertextStoragePath,
+                ownerKeyId, policyHash, grantPolicyHash, ownerContextHash, grantContextHash, grantAad, status,
+                invalidatedAt, invalidatedReason, hash);
     }
 }

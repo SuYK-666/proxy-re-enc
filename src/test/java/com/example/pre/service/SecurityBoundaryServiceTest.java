@@ -14,6 +14,7 @@ import java.time.temporal.ChronoUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class SecurityBoundaryServiceTest {
     @Test
@@ -66,5 +67,15 @@ class SecurityBoundaryServiceTest {
                 uploaded,
                 AccessPolicy.normal(Instant.now().plus(1, ChronoUnit.DAYS))
         ));
+    }
+
+    @Test
+    void productionStylePublicRegistrationDoesNotPersistPrivateKey() {
+        InMemoryAuditRepository audit = new InMemoryAuditRepository();
+        InMemoryUserRepository repository = new InMemoryUserRepository();
+        UserService users = new UserService(new EccPreScheme(), repository, audit);
+        users.registerPublicOnlyUser("Alice", com.example.pre.model.UserRole.OWNER);
+
+        assertNull(repository.findById("Alice").orElseThrow().keyPair().privateKey());
     }
 }

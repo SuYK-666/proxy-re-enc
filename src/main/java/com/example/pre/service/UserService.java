@@ -31,6 +31,15 @@ public final class UserService {
         return user;
     }
 
+    public User registerPublicOnlyUser(String userId, UserRole role) {
+        com.example.pre.model.UserKeyPair transientPair = scheme.generateKeyPair(userId);
+        User user = new User(userId, new com.example.pre.model.UserKeyPair(
+                userId, transientPair.publicKey(), null)).withRole(role);
+        users.save(user);
+        audit.record(new AuditEvent(Instant.now(), userId, "PUBLIC_KEY_REGISTER", userId, true, scheme.name()));
+        return user;
+    }
+
     public User rotateUserKey(User current) {
         User rotated = new User(current.userId(), scheme.generateKeyPair(current.userId()),
                 current.username(), current.role(), current.status(), current.createdAt());

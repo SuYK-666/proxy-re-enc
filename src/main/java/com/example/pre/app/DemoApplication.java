@@ -23,6 +23,7 @@ import com.example.pre.storage.InMemoryReEncryptedPackageRepository;
 import com.example.pre.storage.InMemoryUserRepository;
 import com.example.pre.util.Bytes;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -66,18 +67,20 @@ public final class DemoApplication {
         ShareGrant grant = createGrant(scheme, authorizationService, alice, bob, uploaded);
         ReEncryptedPackage bobPackage = proxy.reEncrypt("proxy", grant.grantId());
         byte[] bobPlaintext = dataService.decryptReEncrypted(bob, bobPackage);
-        boolean bobAfter = new String(bobPlaintext).equals(new String(plaintext));
+        boolean bobAfter = new String(bobPlaintext, StandardCharsets.UTF_8)
+                .equals(new String(plaintext, StandardCharsets.UTF_8));
         boolean charlieAfter = canDecryptReEncrypted(dataService, charlie, bobPackage);
 
         List<String> lines = new ArrayList<>();
         lines.add("=== " + scheme.name() + " Scenario ===");
         lines.add("Alice uploads encrypted file: success");
-        lines.add("Ciphertext differs from plaintext: " + !new String(uploaded.encryptedContent()).contains("Confidential"));
+        lines.add("Ciphertext differs from plaintext: "
+                + !new String(uploaded.encryptedContent(), StandardCharsets.UTF_8).contains("Confidential"));
         lines.add("Bob decrypts before authorization: " + (bobBefore ? "unexpected success" : "failed"));
         lines.add("Proxy re-encrypts capsule: success");
         lines.add("Bob decrypts after authorization: " + (bobAfter ? "success" : "failed"));
         lines.add("Charlie decrypts after Bob authorization: " + (charlieAfter ? "unexpected success" : "failed"));
-        lines.add("Recovered plaintext: " + new String(bobPlaintext));
+        lines.add("Recovered plaintext: " + new String(bobPlaintext, StandardCharsets.UTF_8));
         lines.add("Audit log:");
         for (AuditEvent event : audit.findAll()) {
             lines.add("  " + event.timestamp() + " " + event.actor() + " " + event.action()

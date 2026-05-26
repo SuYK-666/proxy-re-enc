@@ -1,0 +1,1 @@
+{"generated":100,"accepted":100,"collisions":0,"duplicateRejected":true,"concurrencyTest":"AesGcmNonceManagerTest.allowsOnlyOneConcurrentReservationOfSameNonce","result":"PASS"}

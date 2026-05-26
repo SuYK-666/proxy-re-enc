@@ -28,7 +28,7 @@ class RsaPreSchemeTest {
         assertArrayEquals(dataKey, scheme.decapsulate(original, alice.privateKey()));
         assertThrows(RuntimeException.class, () -> scheme.decapsulate(original, bob.privateKey()));
 
-        ReEncryptionKey reKey = new RsaReKeyGenerator().generateReEncryptionKey(
+        ReEncryptionKey reKey = scheme.generateBaselineReEncryptionKey(
                 (com.example.pre.crypto.rsa.RsaPrivateKeyMaterial) alice.privateKey(),
                 (RsaPublicKeyMaterial) bob.publicKey()
         );

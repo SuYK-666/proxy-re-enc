@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiIntegrationTest {
+    private static final HttpClient CLIENT = HttpClient.newHttpClient();
     @Test
     void apiSupportsManagedSharingFlowAndBlocksPackageIdGuessing() throws Exception {
         ReKeyShareApplication.RunningServer server = ReKeyShareApplication.startDemo(0);
@@ -44,6 +45,9 @@ class ApiIntegrationTest {
             HttpResponse<String> bobDownload = get(base + "/api/shared-packages/" + packageId, bobToken);
             assertEquals(200, bobDownload.statusCode());
             assertTrue(bobDownload.body().contains("\"ciphertextStoragePath\""));
+            assertTrue(bobDownload.body().contains("\"packageVersion\":\"v2\""));
+            assertTrue(bobDownload.body().contains("\"manifestHash\""));
+            assertTrue(bobDownload.body().contains("\"schemeId\":\"RSA_PRE_BASELINE\""));
             assertTrue(!bobDownload.body().contains("api-secret"));
 
             HttpResponse<String> bobDemoDecrypt = get(base + "/api/demo/shared-packages/" + packageId + "/decrypt", bobToken);
@@ -168,6 +172,8 @@ class ApiIntegrationTest {
             HttpResponse<String> response = post(base + "/api/data/upload", "", "plaintext=no-token");
             assertEquals(401, response.statusCode());
             assertTrue(response.body().contains("UNAUTHENTICATED"));
+            assertTrue(response.body().contains("\"traceId\""));
+            assertTrue(response.body().contains("\"eventId\""));
         } finally {
             server.stop();
         }
@@ -181,10 +187,13 @@ class ApiIntegrationTest {
             String openApi = get(base + "/openapi.json", "").body();
             assertTrue(!openApi.contains("/api/demo/shared-packages/{packageId}/decrypt"));
             assertTrue(!openApi.contains("/api/data/upload\""));
+            assertTrue(!openApi.contains("/api/users/{userId}/keys/rotate"));
             String aliceToken = createUser(base, "ProdAlice", "OWNER", "RSA_PRE");
             HttpResponse<String> upload = post(base + "/api/data/upload", aliceToken, "plaintext=must-not-work");
             assertEquals(403, upload.statusCode());
             assertTrue(upload.body().contains("DEMO_ONLY_API_DISABLED"));
+            HttpResponse<String> rotation = post(base + "/api/users/ProdAlice/keys/rotate", aliceToken, "");
+            assertEquals(403, rotation.statusCode());
         } finally {
             server.stop();
         }
@@ -205,6 +214,118 @@ class ApiIntegrationTest {
         }
     }
 
+    @Test
+    void concurrentDownloadsCannotExceedAccessLimit() throws Exception {
+        ReKeyShareApplication.RunningServer server = ReKeyShareApplication.startDemo(0);
+        try {
+            String base = "http://localhost:" + server.port();
+            String aliceToken = createUser(base, "Alice", "OWNER", "RSA_PRE");
+            String bobToken = createUser(base, "Bob", "RECIPIENT", "RSA_PRE");
+            String proxyToken = createUser(base, "proxy", "PROXY", "RSA_PRE");
+            for (int limit : new int[]{1, 3, 10}) {
+                String dataId = field(post(base + "/api/data/upload", aliceToken, "plaintext=counter-" + limit).body(), "dataId");
+                String grantId = field(post(base + "/api/grants", aliceToken,
+                        "dataId=" + dataId + "&recipientId=Bob&maxAccessCount=" + limit + "&maxDownloadCount=" + limit).body(), "grantId");
+                String packageId = field(post(base + "/api/proxy/re-encrypt", proxyToken, "grantId=" + grantId).body(), "packageId");
+
+                var executor = java.util.concurrent.Executors.newFixedThreadPool(100);
+                try {
+                    java.util.List<java.util.concurrent.Future<Integer>> futures = new java.util.ArrayList<>();
+                    for (int index = 0; index < 100; index++) {
+                        futures.add(executor.submit(() -> get(base + "/api/shared-packages/" + packageId, bobToken).statusCode()));
+                    }
+                    int success = 0;
+                    for (var future : futures) {
+                        if (future.get() == 200) {
+                            success++;
+                        }
+                    }
+                    assertEquals(limit, success);
+                } finally {
+                    executor.shutdownNow();
+                }
+            }
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void malformedAndUnsupportedRequestsReturnClientErrorsWithoutStackLeakage() throws Exception {
+        ReKeyShareApplication.RunningServer server = ReKeyShareApplication.start(0);
+        try {
+            String base = "http://localhost:" + server.port();
+            HttpResponse<String> malformed = postJson(base + "/api/users", "", "{\"userId\":\"unterminated}");
+            assertEquals(400, malformed.statusCode());
+            assertTrue(!malformed.body().contains("Exception"));
+
+            HttpResponse<String> wrongType = postWithContentType(base + "/api/users", "",
+                    "userId=alice", "text/plain");
+            assertEquals(400, wrongType.statusCode());
+            assertTrue(wrongType.body().contains("INVALID_REQUEST"));
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void replayedIdempotencyKeyDoesNotCreateDuplicateMutation() throws Exception {
+        ReKeyShareApplication.RunningServer server = ReKeyShareApplication.startDemo(0);
+        try {
+            String base = "http://localhost:" + server.port();
+            String aliceToken = createUser(base, "Alice", "OWNER", "RSA_PRE");
+            HttpResponse<String> first = postIdempotent(base + "/api/data/upload", aliceToken,
+                    "plaintext=replay-protected", "upload-key-1");
+            HttpResponse<String> replay = postIdempotent(base + "/api/data/upload", aliceToken,
+                    "plaintext=replay-protected", "upload-key-1");
+            assertEquals(201, first.statusCode());
+            assertEquals(403, replay.statusCode());
+            assertTrue(replay.body().contains("POLICY_VIOLATION"));
+        } finally {
+            server.stop();
+        }
+    }
+
+    @Test
+    void managementSurfaceEnforcesKeyOwnershipAndSupportsAuditedExports() throws Exception {
+        ReKeyShareApplication.RunningServer server = ReKeyShareApplication.startDemo(0);
+        try {
+            String base = "http://localhost:" + server.port();
+            assertEquals(200, get(base + "/", "").statusCode());
+            String adminToken = createUser(base, "admin", "ADMIN", "RSA_PRE");
+            String aliceToken = createUser(base, "Alice", "OWNER", "RSA_PRE");
+            String bobToken = createUser(base, "Bob", "RECIPIENT", "RSA_PRE");
+
+            assertEquals(200, post(base + "/api/auth/login", "", "userId=Alice").statusCode());
+            assertEquals(200, get(base + "/api/users", adminToken).statusCode());
+            assertEquals(403, post(base + "/api/users/Alice/keys", bobToken, "").statusCode());
+            assertEquals(201, post(base + "/api/users/Alice/keys", aliceToken, "").statusCode());
+            assertEquals(201, post(base + "/api/proxy-nodes", adminToken,
+                    "proxyId=managed&allowedSchemeIds=RSA_PRE&quota=1").statusCode());
+            assertEquals(200, post(base + "/api/proxy-nodes/managed/revoke", adminToken, "").statusCode());
+
+            String dataId = field(post(base + "/api/data/upload", aliceToken, "plaintext=export-proof").body(), "dataId");
+            assertEquals(200, get(base + "/api/audit/events", adminToken).statusCode());
+            assertEquals(200, get(base + "/api/audit/data/" + dataId, adminToken).statusCode());
+            assertEquals(200, get(base + "/api/audit/root", adminToken).statusCode());
+            assertEquals(200, get(base + "/api/audit/proof", adminToken).statusCode());
+            assertEquals(200, get(base + "/api/audit/export", adminToken).statusCode());
+
+            HttpResponse<String> export = post(base + "/api/storage/export", adminToken, "");
+            assertEquals(201, export.statusCode());
+            String snapshotHash = field(export.body(), "snapshotHash");
+            HttpResponse<String> importCheck = post(base + "/api/storage/import-check", adminToken,
+                    "snapshotHash=" + snapshotHash);
+            assertEquals(200, importCheck.statusCode());
+            assertTrue(importCheck.body().contains("\"valid\":true"));
+            assertEquals(201, post(base + "/api/storage/export-index", adminToken, "").statusCode());
+            assertEquals(200, get(base + "/api/storage/status", adminToken).statusCode());
+            assertEquals(404, get(base + "/api/no-such-endpoint", adminToken).statusCode());
+        } finally {
+            server.stop();
+        }
+    }
+
     private static HttpResponse<String> post(String uri, String actor, String body) throws IOException, InterruptedException {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(uri))
                 .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -212,7 +333,7 @@ class ApiIntegrationTest {
         if (!actor.isBlank()) {
             builder.header("Authorization", "Bearer " + actor);
         }
-        return HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private static HttpResponse<String> get(String uri, String actor) throws IOException, InterruptedException {
@@ -220,7 +341,34 @@ class ApiIntegrationTest {
         if (!actor.isBlank()) {
             builder.header("Authorization", "Bearer " + actor);
         }
-        return HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static HttpResponse<String> postJson(String uri, String actor, String body) throws IOException, InterruptedException {
+        return postWithContentType(uri, actor, body, "application/json");
+    }
+
+    private static HttpResponse<String> postWithContentType(String uri, String actor, String body, String contentType)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(uri))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", contentType);
+        if (!actor.isBlank()) {
+            builder.header("Authorization", "Bearer " + actor);
+        }
+        return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static HttpResponse<String> postIdempotent(String uri, String actor, String body, String idempotencyKey)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(uri))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .header("Idempotency-Key", idempotencyKey);
+        if (!actor.isBlank()) {
+            builder.header("Authorization", "Bearer " + actor);
+        }
+        return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private static String createUser(String base, String userId, String role, String algorithm) throws Exception {

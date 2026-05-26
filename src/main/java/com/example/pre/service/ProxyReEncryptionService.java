@@ -2,9 +2,12 @@ package com.example.pre.service;
 
 import com.example.pre.crypto.EncryptedKeyCapsule;
 import com.example.pre.crypto.PreScheme;
+import com.example.pre.crypto.ReEncryptionKey;
+import com.example.pre.crypto.ScopedReEncryptionKey;
 import com.example.pre.model.AuditEvent;
 import com.example.pre.model.EncryptedDataPackage;
 import com.example.pre.model.ReEncryptedPackage;
+import com.example.pre.model.PackageManifest;
 import com.example.pre.model.ShareGrant;
 import com.example.pre.model.UserRole;
 import com.example.pre.storage.AuditRepository;
@@ -48,7 +51,12 @@ public final class ProxyReEncryptionService {
             }
             var ownerContext = DataSecurityService.capsuleContext(data);
             var grantContext = DataSecurityService.grantContext(data, grant);
-            EncryptedKeyCapsule transformed = scheme.reEncrypt(data.originalCapsule(), grant.reKey(), ownerContext);
+            ReEncryptionKey reKey = grant.reKey();
+            if (reKey instanceof ScopedReEncryptionKey scoped) {
+                reKey = scoped.consume(grant.grantId(), data.dataId(), grant.recipientId(),
+                        grant.contentKeyVersion(), grant.policyHash(), Instant.now());
+            }
+            EncryptedKeyCapsule transformed = scheme.reEncrypt(data.originalCapsule(), reKey, ownerContext);
             ReEncryptedPackage dataPackage = new ReEncryptedPackage(
                     java.util.UUID.randomUUID().toString(),
                     grant.grantId(),
@@ -71,8 +79,10 @@ public final class ProxyReEncryptionService {
                     com.example.pre.util.AadBuilder.build(grantContext),
                     com.example.pre.model.PackageStatus.ACTIVE,
                     null,
+                    "",
                     ""
             );
+            dataPackage = dataPackage.withIssuedManifestHash(PackageManifest.issue(dataPackage).manifestHash());
             packageRepository.save(dataPackage);
             grantRepository.save(grant.incrementReEncrypt());
             audit.record(new AuditEvent(Instant.now(), proxyActor.userId(), "PROXY_REENCRYPT", dataPackage.packageId(), true, scheme.name()));

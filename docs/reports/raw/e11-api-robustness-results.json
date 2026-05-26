@@ -1,0 +1,1 @@
+{"cases":104,"clientErrors":104,"serverErrors":0,"covered":["100-malformed-json","unsupported-content-type","oversized-body","unauthenticated-path-input","invalid-enum"],"result":"PASS"}
