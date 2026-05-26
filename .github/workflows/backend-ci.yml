@@ -27,6 +27,7 @@ jobs:
         run: sh scripts/run-all-experiments.sh
       - name: Documentation and performance evidence gates
         run: |
+          sh scripts/check-docs-format.sh
           sh scripts/check-doc-links.sh
           sh scripts/check-performance-budget.sh
       - name: Upload reports and SBOM

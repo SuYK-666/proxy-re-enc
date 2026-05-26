@@ -1,8 +1,11 @@
 # Access Counter Semantics
 
-授权的 `maxAccessCount` 是成功消费上限，而不是请求尝试次数。服务拒绝过期、撤销或超过限额的访问，并且不能在并发竞争中超发。
+授权的 `maxAccessCount` 是成功消费上限，而不是请求尝试次数。
+服务拒绝过期、撤销或超过限额的访问，并且不能在并发竞争中超发。
 
-本地 HTTP 演示适配在单 JVM 内以同步临界区更新访问次数；`JdbcGovernanceRepository.consumeGrantAccess` 为持久化/多线程证据路径，执行带条件的原子更新，仅当 grant 为 `ACTIVE` 且当前计数小于最大计数时成功。
+本地 HTTP 演示适配在单 JVM 内以同步临界区更新访问次数；
+`JdbcGovernanceRepository.consumeGrantAccess` 为持久化/多线程证据路径，
+执行带条件的原子更新，仅当 grant 为 `ACTIVE` 且当前计数小于最大计数时成功。
 
 验证证据：
 

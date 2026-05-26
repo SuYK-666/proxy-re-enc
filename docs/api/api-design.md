@@ -11,4 +11,7 @@
 | `POST /api/grants/{id}/revoke` | owner | 撤销并失效活动 package |
 | `GET /api/audit/proof` | admin | 导出审计 proof |
 
-`PRODUCTION` 不公开明文上传、明文解密、服务端私钥轮换或 demo recipient-share；完整 OpenAPI catalog 由服务的 `/openapi.json` 返回。错误格式见 [error-model.md](error-model.md)，请求体限制、幂等与限流见 [security-controls.md](security-controls.md)。
+`PRODUCTION` 不公开明文上传、明文解密、服务端私钥轮换或 demo recipient-share；
+完整 OpenAPI catalog 由服务的 `/openapi.json` 返回。错误格式见
+[error-model.md](error-model.md)，请求体限制、幂等与限流见
+[security-controls.md](security-controls.md)。

@@ -2,18 +2,26 @@
 
 ## Security Goals
 
-- G-01 Data confidentiality: storage, proxy nodes, and unauthorized users must not recover plaintext or DEKs.
-- G-02 Authorization integrity: only owners create grants; only recipients use grants; proxy nodes only transform capsules.
-- G-03 Proxy least knowledge: proxy nodes never receive plaintext, DEKs, owner private keys, or recipient private keys.
-- G-04 Revocation: revoked grants cannot create new valid packages, and existing packages are invalidated.
-- G-05 Verifiable audit: grant, re-encryption, download, revoke, failure, and admin operations are hash chained and checkpointed.
-- G-06 Reproducibility: build, self-test, benchmark, and raw reports are kept under `docs/reports`.
+- G-01 Data confidentiality: storage, proxy nodes, and unauthorized users must not
+	recover plaintext or DEKs.
+- G-02 Authorization integrity: only owners create grants; only recipients use
+	grants; proxy nodes only transform capsules.
+- G-03 Proxy least knowledge: proxy nodes never receive plaintext, DEKs, owner
+	private keys, or recipient private keys.
+- G-04 Revocation: revoked grants cannot create new valid packages, and existing
+	packages are invalidated.
+- G-05 Verifiable audit: grant, re-encryption, download, revoke, failure, and
+	admin operations are hash chained and checkpointed.
+- G-06 Reproducibility: build, self-test, benchmark, and raw reports are kept
+	under `docs/reports`.
 
 ## Trust Assumptions
 
-- Signed bearer tokens are issued by the service secret and include `sub`, `role`, `iat`, `exp`, `jti`, and `tenantId`.
+- Signed bearer tokens are issued by the service secret and include `sub`,
+  `role`, `iat`, `exp`, `jti`, and `tenantId`.
 - Recipient private keys are client-side assets in the intended production boundary. Demo fixtures are not a production boundary.
-- RSA-PRE and ECC-PRE are teaching prototypes. They are retained for demonstration and comparison, not claimed as production-grade PRE.
+- RSA-PRE and ECC-PRE are teaching prototypes. They are retained for
+	demonstration and comparison, not claimed as production-grade PRE.
 - Production deployments must replace demo signing secrets and demo key stores.
 
 ## In Scope Threats

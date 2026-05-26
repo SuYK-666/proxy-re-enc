@@ -23,4 +23,7 @@
 
 ## Explicit Security Boundary
 
-RSA-PRE and ECC-PRE are teaching prototypes. The system demonstrates lifecycle management, object authorization, revocation, audit, and benchmark evidence. Production deployment should replace the PRE algorithms with reviewed PRE/HPKE/threshold PRE libraries and store private keys in client/HSM custody.
+RSA-PRE and ECC-PRE are teaching prototypes. The system demonstrates lifecycle
+management, object authorization, revocation, audit, and benchmark evidence.
+Production deployment should replace the PRE algorithms with reviewed
+PRE/HPKE/threshold PRE libraries and store private keys in client/HSM custody.

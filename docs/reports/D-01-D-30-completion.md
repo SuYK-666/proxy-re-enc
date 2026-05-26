@@ -5,7 +5,7 @@
 | D-01 | Done | Signed bearer tokens, `SecurityContext`, 401 on unauthenticated requests. |
 | D-02 | Done | `/api/shared-packages/{id}` returns ciphertext/capsule only; plaintext only under demo decrypt endpoint. |
 | D-03 | Done | `/api/data/upload-encrypted`, `uploadEncrypted`, owner-side rotation path; package model no longer accepts or stores plaintext/demo plaintext hashes. |
-| D-04 | Done | Production RSA generator rejects <2048 bit; default is 3072 bit. |
+| D-04 | Done | Production RSA generator rejects \<2048 bit; default is 3072 bit. |
 | D-05 | Done | `THREAT_MODEL.md` and README classify RSA-PRE as teaching prototype. |
 | D-06 | Done | Threat model marks self-written ECC as demo-only/out-of-production boundary. |
 | D-07 | Done | KDF compatibility entry now uses HKDF-SHA256 extract/expand. |

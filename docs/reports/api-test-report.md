@@ -43,4 +43,6 @@ ACCESS_DENIED
 
 ## Notes
 
-The API remains a no-external-dependency JDK `HttpServer` implementation for course reproducibility. The production upgrade path is Spring Boot/JPA/H2 or SQLite with a full generated OpenAPI schema.
+The API remains a no-external-dependency JDK `HttpServer` implementation for
+course reproducibility. The production upgrade path is Spring Boot/JPA/H2 or
+SQLite with a full generated OpenAPI schema.

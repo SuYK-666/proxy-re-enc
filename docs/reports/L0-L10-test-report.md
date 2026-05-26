@@ -20,11 +20,17 @@ Date: 2026-05-19
 
 ## Environment Note
 
-The local workspace has `javac 25.0.2` but no `mvn` executable. Therefore Maven-dependent L0 gates (`mvn test`, `mvn verify`, `spotbugs:check`, `dependency-check:check`, `jacoco:report`) are configured in `pom.xml` and CI but could not be executed locally in this session. The raw error is preserved in `docs/reports/raw/L0/mvn-test.txt`.
+The local workspace has `javac 25.0.2` but no `mvn` executable. Therefore
+Maven-dependent L0 gates (`mvn test`, `mvn verify`, `spotbugs:check`,
+`dependency-check:check`, `jacoco:report`) are configured in `pom.xml` and CI
+but could not be executed locally in this session. The raw error is preserved in
+`docs/reports/raw/L0/mvn-test.txt`.
 
 ## Key Raw Results
 
-- `docs/reports/raw/L3/api-authz-results.json`: `missingTokenStatus=401`, `headerSpoofRecipient=bob`, `formalResponseHasPlaintext=false`, `secondDownloadStatus=403`.
+- `docs/reports/raw/L3/api-authz-results.json`: `missingTokenStatus=401`,
+  `headerSpoofRecipient=bob`, `formalResponseHasPlaintext=false`,
+  `secondDownloadStatus=403`.
 - `docs/reports/raw/L7/production-profile-results.json`: production profile hides demo decrypt/upload routes and rejects plaintext upload with 403.
 - `docs/reports/raw/L5/audit-tamper-results.json`: all audit tamper checks are `PASS`.
 - `docs/reports/raw/L6/concurrency-download-results.json`: `success=1`, `denied=19`.

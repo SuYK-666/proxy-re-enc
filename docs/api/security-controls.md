@@ -3,7 +3,8 @@
 ## Request Boundary
 
 - `PRODUCTION` profile 不注册 demo plaintext upload/decrypt 和服务端私钥轮换路径。
-- 所有 `POST` 请求必须使用 `application/json` 或 `application/x-www-form-urlencoded`；畸形 JSON、不支持的 media type 和超过 1 MiB 的 body 返回 4xx。
+- 所有 `POST` 请求必须使用 `application/json` 或 `application/x-www-form-urlencoded`；
+	畸形 JSON、不支持的 media type 和超过 1 MiB 的 body 返回 4xx。
 - 安全失败响应包含 `errorCode`、`traceId`、`eventId` 与 `timestamp`，不输出异常栈或密钥材料。
 
 ## Replay And Rate Limits

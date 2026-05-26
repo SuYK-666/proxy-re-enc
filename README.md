@@ -2,43 +2,51 @@
 
 > 面向半可信云存储与代理节点的数据安全共享系统原型。
 
-![Java](https://img.shields.io/badge/Java-17%2B-blue)
-![Build](https://img.shields.io/badge/Build-Maven%20%7C%20Javac-brightgreen)
-![Crypto](https://img.shields.io/badge/Crypto-AES--GCM%20%7C%20PRE%20baseline-orange)
-![CI](https://github.com/example/proxy-re-enc/actions/workflows/backend-ci.yml/badge.svg)
-![Status](https://img.shields.io/badge/Status-verifiable--prototype-success)
+[![Commit](https://img.shields.io/github/last-commit/SuYK-666/proxy-re-enc/main)](https://github.com/SuYK-666/proxy-re-enc/commits/main)
+[![Java](https://img.shields.io/badge/Java-17%2B-blue)](https://adoptium.net/)
+[![CI](https://github.com/SuYK-666/proxy-re-enc/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/SuYK-666/proxy-re-enc/actions/workflows/backend-ci.yml)
+[![Coverage](https://img.shields.io/badge/Coverage-JaCoCo%20gate-blue)](docs/ops/ci-quality-gates.md)
+[![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-blue)](docs/ops/ci-quality-gates.md)
 
-ReKeyShare 是一个用 Java 实现的数据安全共享系统原型。项目围绕“数据拥有者将密文托管到半可信存储，授权接收方通过代理重加密获得访问能力”的场景，提供客户端侧加密上传、对象级授权、代理节点治理、授权撤销、内容密钥轮换、可验证审计与安全测试报告等完整工程能力。
+ReKeyShare 是一个用 Java 实现的数据安全共享系统原型。项目围绕
+“数据拥有者将密文托管到半可信存储，授权接收方通过代理重加密获得访问能力”的场景，
+提供客户端侧加密上传、对象级授权、代理节点治理、授权撤销、内容密钥轮换、
+可验证审计与安全测试报告等完整工程能力。
 
-项目中的 `RSA_PRE` 与 `ECC_PRE` 明确定位为教学型 baseline 和对照实验实现，不作为生产级密码安全承诺。升级后的 `CryptoProvider` 适配层增加了 `SECURE_ENVELOPE_V1`（JCA P-256 ECDH + HKDF-SHA256 + AES-256-GCM）作为直接接收方封装候选路径；它不冒充 PRE 代理转换协议。生产路径的核心边界是：服务端保存密文、nonce、AAD、capsule 与验证元数据，不保存用户明文、DEK 明文或用户私钥。
+项目中的 `RSA_PRE` 与 `ECC_PRE` 明确定位为教学型 baseline 和对照实验实现，
+不作为生产级密码安全承诺。升级后的 `CryptoProvider` 适配层增加了
+`SECURE_ENVELOPE_V1`（JCA P-256 ECDH + HKDF-SHA256 + AES-256-GCM）
+作为直接接收方封装候选路径；它不冒充 PRE 代理转换协议。
+生产路径的核心边界是：服务端保存密文、nonce、AAD、capsule 与验证元数据，
+不保存用户明文、DEK 明文或用户私钥。
 
 ## 目录
 
-- [核心场景](#核心场景)
-- [系统架构](#系统架构)
-- [安全模型](#安全模型)
-- [功能亮点](#功能亮点)
-- [快速开始](#快速开始)
-- [运行模式](#运行模式)
-- [API 概览](#api-概览)
-- [测试与报告](#测试与报告)
-- [项目结构](#项目结构)
-- [文档索引](#文档索引)
-- [当前边界与路线图](#当前边界与路线图)
-- [上游与原创性说明](#上游与原创性说明)
+- [核心场景](#%E6%A0%B8%E5%BF%83%E5%9C%BA%E6%99%AF)
+- [系统架构](#%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84)
+- [安全模型](#%E5%AE%89%E5%85%A8%E6%A8%A1%E5%9E%8B)
+- [功能亮点](#%E5%8A%9F%E8%83%BD%E4%BA%AE%E7%82%B9)
+- [快速开始](#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B)
+- [运行模式](#%E8%BF%90%E8%A1%8C%E6%A8%A1%E5%BC%8F)
+- [API 概览](#api-%E6%A6%82%E8%A7%88)
+- [测试与报告](#%E6%B5%8B%E8%AF%95%E4%B8%8E%E6%8A%A5%E5%91%8A)
+- [项目结构](#%E9%A1%B9%E7%9B%AE%E7%BB%93%E6%9E%84)
+- [文档索引](#%E6%96%87%E6%A1%A3%E7%B4%A2%E5%BC%95)
+- [当前边界与路线图](#%E5%BD%93%E5%89%8D%E8%BE%B9%E7%95%8C%E4%B8%8E%E8%B7%AF%E7%BA%BF%E5%9B%BE)
+- [上游与原创性说明](#%E4%B8%8A%E6%B8%B8%E4%B8%8E%E5%8E%9F%E5%88%9B%E6%80%A7%E8%AF%B4%E6%98%8E)
 
 ## 核心场景
 
 ReKeyShare 使用 Alice、Bob、Proxy 与审计管理员四类角色来刻画安全共享流程：
 
 1. Alice 在客户端生成数据密钥 DEK，并使用 AES-GCM 加密文件正文。
-2. Alice 将密文、nonce、AAD、capsule 和元数据提交到服务端。
-3. Alice 为 Bob 创建带策略约束的授权 `ShareGrant`。
-4. 经过注册且处于 `ACTIVE` 状态的 Proxy 只转换 capsule，不接触明文、DEK 或用户私钥。
-5. Bob 下载共享包，在客户端侧解封装 DEK 并完成正文解密。
-6. Charlie 猜测 `dataId`、`grantId`、`packageId` 或跨租户对象时，会被对象级授权拒绝。
-7. Alice 撤销授权后，旧 package 被失效；需要强撤销时，由 owner-side rotation 生成新密文版本。
-8. 关键操作写入 hash-chain audit log，并可导出审计 proof 供复核。
+1. Alice 将密文、nonce、AAD、capsule 和元数据提交到服务端。
+1. Alice 为 Bob 创建带策略约束的授权 `ShareGrant`。
+1. 经过注册且处于 `ACTIVE` 状态的 Proxy 只转换 capsule，不接触明文、DEK 或用户私钥。
+1. Bob 下载共享包，在客户端侧解封装 DEK 并完成正文解密。
+1. Charlie 猜测 `dataId`、`grantId`、`packageId` 或跨租户对象时，会被对象级授权拒绝。
+1. Alice 撤销授权后，旧 package 被失效；需要强撤销时，由 owner-side rotation 生成新密文版本。
+1. 关键操作写入 hash-chain audit log，并可导出审计 proof 供复核。
 
 ## 系统架构
 
@@ -86,9 +94,13 @@ ReKeyShare 的安全设计围绕“服务端可托管密文和元数据，但不
 - `RSA_PRE` common modulus 与当前 `ECC_PRE` 都不是生产级 PRE 协议。
 - 授权撤销不能追回接收方已经离线保存的旧明文。
 - 内置 token 服务用于 demo 和课程实验，不等价于完整 OIDC、OAuth2、mTLS 或企业 IAM。
-- 默认 HTTP 服务器使用 In-memory repository 以保持演示可复现；`JdbcGovernanceRepository` 与 `JdbcAuditRepository` 已提供恢复、撤销事务和原子限次验证，部署装配仍需配套对象存储、KMS/HSM 与集中审计系统。
+- 默认 HTTP 服务器使用 In-memory repository 以保持演示可复现；
+  `JdbcGovernanceRepository` 与 `JdbcAuditRepository` 已提供恢复、撤销事务和
+  原子限次验证，部署装配仍需配套对象存储、KMS/HSM 与集中审计系统。
 
-更多细节见 [docs/SECURITY_DESIGN.md](docs/SECURITY_DESIGN.md)、[docs/CRYPTO_SCHEME.md](docs/CRYPTO_SCHEME.md) 与 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)。
+更多细节见 [docs/SECURITY_DESIGN.md](docs/SECURITY_DESIGN.md)、
+[docs/CRYPTO_SCHEME.md](docs/CRYPTO_SCHEME.md) 与
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)。
 
 ## 功能亮点
 
@@ -174,7 +186,10 @@ Demo 模式会启用 `/api/data/upload` 和 `/api/demo/shared-packages/{packageI
 
 ## API 概览
 
-完整路径可从 `/openapi.json` 查看。下面的 baseline 全链路用于以 `DEMO` profile 运行的教学/正确性验证；`PRODUCTION` 只持久化注册用户的公钥材料，支持客户端侧加密上传，但正式 rekey/解封装须由客户端或 KMS 集成提供，不会让服务端代持用户私钥。
+完整路径可从 `/openapi.json` 查看。下面的 baseline 全链路用于以 `DEMO` profile
+运行的教学/正确性验证；`PRODUCTION` 只持久化注册用户的公钥材料，
+支持客户端侧加密上传，但正式 rekey/解封装须由客户端或 KMS 集成提供，
+不会让服务端代持用户私钥。
 
 ### 1. 创建用户并获取 token
 
@@ -232,7 +247,9 @@ curl -X POST http://localhost:8080/api/grants `
   }'
 ```
 
-ECC 授权还可使用 `/api/rekey-sessions`、`/api/rekey-sessions/{sessionId}/recipient-share` 与 `/api/grants/ecc` 完成 recipient-share 工作流。
+ECC 授权还可使用 `/api/rekey-sessions`、
+`/api/rekey-sessions/{sessionId}/recipient-share` 与 `/api/grants/ecc`
+完成 recipient-share 工作流。
 
 ### 4. 代理重加密
 

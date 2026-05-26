@@ -1,6 +1,8 @@
 # Streaming AEAD
 
-`AesGcmChunkedEncryptor` 和 `AesGcmChunkedDecryptor` 使用独立 nonce 与 `chunk index + base AAD` 保护每个 chunk。`MerkleChunkTree` 将各 chunk ciphertext hash 汇总为 root。
+`AesGcmChunkedEncryptor` 和 `AesGcmChunkedDecryptor` 使用独立 nonce 与
+`chunk index + base AAD` 保护每个 chunk。
+`MerkleChunkTree` 将各 chunk ciphertext hash 汇总为 root。
 
 - 默认 chunk size：1 MiB。
 - 解密前验证 Merkle root，并逐块检查 ciphertext hash。

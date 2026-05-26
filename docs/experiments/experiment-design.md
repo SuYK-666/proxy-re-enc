@@ -33,4 +33,7 @@ runner 输出 `docs/reports/raw/*` 与 `docs/reports/summary/*`，nonce registry
 | E13 | threshold prototype | 2-of-3、3-of-5 | `<k` 失败且 `>=k` 成功 | `e13-threshold-results.csv` |
 | E14 | 性能回归门禁 | retained baseline versus current p95 | p95 回归不超过 25%，正确性失败 0 | `e14-performance-gate-results.json` |
 
-每个 summary 记录 commit、JDK、OS、运行时间及 raw 链接；环境总览见 `raw/experiment-environment.json`。E06/E08/E10-E12/E14 由 `ComplianceExperimentApplication` 生成，E10 明确测量 JDBC 治理 adapter 而不是把默认内存 API 装配描述成生产持久化。
+每个 summary 记录 commit、JDK、OS、运行时间及 raw 链接；环境总览见
+`raw/experiment-environment.json`。E06/E08/E10-E12/E14 由
+`ComplianceExperimentApplication` 生成，E10 明确测量 JDBC 治理 adapter，
+而不是把默认内存 API 装配描述成生产持久化。

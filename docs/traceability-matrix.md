@@ -1,6 +1,7 @@
 # Traceability Matrix
 
-本矩阵将指导文档的核心整改项映射至当前代码、测试与实验/文档证据。`implemented` 表示仓库内存在可执行实现与验证；生产外部系统接入边界另列说明。
+本矩阵将指导文档的核心整改项映射至当前代码、测试与实验/文档证据。
+`implemented` 表示仓库内存在可执行实现与验证；生产外部系统接入边界另列说明。
 
 | 需求 | 状态 | 代码 | 测试/实验 | 文档 |
 | --- | --- | --- | --- | --- |
@@ -28,4 +29,7 @@
 
 ## Production Integration Boundary
 
-以下能力需要部署系统或外部基础设施，仓库不虚构其已上线：将 HTTP runtime 装配为 JDBC 治理 adapter 的多实例部署、ciphertext 对象存储运维、KMS/HSM 私钥托管、OIDC/mTLS、外部不可篡改 audit anchor，以及联网更新漏洞库后的发布扫描结果。
+以下能力需要部署系统或外部基础设施，仓库不虚构其已上线：
+将 HTTP runtime 装配为 JDBC 治理 adapter 的多实例部署、ciphertext 对象存储运维、
+KMS/HSM 私钥托管、OIDC/mTLS、外部不可篡改 audit anchor，
+以及联网更新漏洞库后的发布扫描结果。

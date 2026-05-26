@@ -2,7 +2,8 @@
 
 Source: `../raw/e02-algorithm-benchmark.csv`
 
-Formal experiment settings: warmup=20 and measurement=100 per algorithm/file size; JUnit may override these values for schema smoke checks.
+Formal experiment settings: warmup=20 and measurement=100 per algorithm/file
+size; JUnit may override these values for schema smoke checks.
 
 | Algorithm | File Size | Avg Total Ms | P50 | P95 | P99 | Stddev | Throughput B/s | Avg AES Encrypt Ms | Avg AES Decrypt Ms | Avg ReEncrypt Ms | Capsule Bytes | Success |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
@@ -19,4 +20,8 @@ The CSV remains the source of truth; this summary is generated from the same row
 
 ## Analysis
 
-Correctness passed for every measured row. On a warmed JVM with CPU AES acceleration, AES-GCM throughput can be faster than the conservative planning interval; lower latency is not a regression when authentication and recovery checks remain successful. RSA/ECC values are baseline comparison data only and do not change their experimental security status.
+Correctness passed for every measured row. On a warmed JVM with CPU AES
+acceleration, AES-GCM throughput can be faster than the conservative planning
+interval; lower latency is not a regression when authentication and recovery
+checks remain successful. RSA/ECC values are baseline comparison data only and
+do not change their experimental security status.

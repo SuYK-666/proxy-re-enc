@@ -5,11 +5,11 @@
 ReKeyShare 当前已经从单纯 PRE 算法 demo 扩展为一个面向半可信云存储场景的数据安全共享管理系统原型。系统主线是：
 
 1. 使用 AES-256-GCM 加密正文。
-2. 使用 RSA/ECC 教学型 PRE 封装和转换 DEK 胶囊。
-3. 使用 `ShareGrant` 和 `AccessPolicy` 管理授权生命周期。
-4. 使用对象级授权阻止 dataId、grantId、packageId 猜测攻击。
-5. 使用 revoke 和 contentKeyVersion 实现软撤销与内容密钥版本轮换。
-6. 使用哈希链审计和 benchmark 报告支撑可核查演示。
+1. 使用 RSA/ECC 教学型 PRE 封装和转换 DEK 胶囊。
+1. 使用 `ShareGrant` 和 `AccessPolicy` 管理授权生命周期。
+1. 使用对象级授权阻止 dataId、grantId、packageId 猜测攻击。
+1. 使用 revoke 和 contentKeyVersion 实现软撤销与内容密钥版本轮换。
+1. 使用哈希链审计和 benchmark 报告支撑可核查演示。
 
 ## 已落地硬化项
 

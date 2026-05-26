@@ -5,7 +5,8 @@
 - OS: `Windows 11 10.0`
 - Generated: `2026-05-26T06:34:37.554992700Z`
 
-The matrix exercises tenant, role, action, purpose, classification, access-count, proxy-state and time-window denial decisions across 50 high-risk samples.
+The matrix exercises tenant, role, action, purpose, classification, access-count,
+proxy-state and time-window denial decisions across 50 high-risk samples.
 
 Raw data: `../raw/e05-negative-policy-matrix.json`
 
