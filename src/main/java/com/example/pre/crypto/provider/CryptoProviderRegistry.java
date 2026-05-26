@@ -25,14 +25,22 @@ public final class CryptoProviderRegistry {
         return provider;
     }
 
+    public CryptoProvider require(CryptoProfile profile, String schemeId) {
+        CryptoProvider provider = require(schemeId);
+        CryptoProfileGuard.assertAllowed(profile, provider.descriptor());
+        return provider;
+    }
+
     public List<SchemeDescriptor> descriptors() {
         return providers.values().stream().map(CryptoProvider::descriptor).toList();
     }
 
     public CryptoProvider productionDefault() {
-        return providers.values().stream()
-                .filter(provider -> provider.descriptor().allowedAsProductionDefault())
+        CryptoProvider provider = providers.values().stream()
+                .filter(candidate -> candidate.descriptor().allowedAsProductionDefault())
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("production requires a non-baseline crypto provider"));
+        CryptoProfileGuard.assertAllowed(CryptoProfile.productionDefault(), provider.descriptor());
+        return provider;
     }
 }

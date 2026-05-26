@@ -11,7 +11,7 @@
 | M04 scoped rekey | implemented | `ScopedReEncryptionKey`, `ProxyReEncryptionService` | `ScopedReEncryptionKeyTest` | `security/rekey-scope.md` |
 | M05/F04 package V2 | implemented | `SharedPackageV2`, `PackageManifest`, `PackageVerifier` | `PackageVerifierTest`, E04 | `package-format/v2.md` |
 | M06 流式验证 | implemented | `AesGcmChunkedDecryptor`, `MerkleChunkTree` | `AesGcmChunkedDecryptorTest`, E03 | `algorithms/streaming-aead.md` |
-| M07 nonce 防复用 | implemented (single instance/file + DB schema) | `AesGcmNonceManager`, `schema.sql` | `AesGcmNonceManagerTest` | `security/nonce-management.md` |
+| M07 nonce 防复用 | implemented (single instance append-only cache + DB schema) | `AesGcmNonceManager`, `schema.sql` | `AesGcmNonceManagerTest` (restart/concurrent/2,000 append) | `security/nonce-management.md` |
 | M08/F05 ABAC | implemented policy core | `security/policy/*` | `PolicyEvaluatorTest` (10 permit/10 deny) | `security/abac-policy-model.md` |
 | M09/F06 撤销/轮换 | implemented | `RevocationService`, `StateTransitionGuard` | `ReKeyShareLifecycleTest` | `security/revocation-semantics.md` |
 | M10/F07 密钥边界 | implemented production boundary/model | `UserService.registerPublicOnlyUser`, `KeyManagementService`, `KeyVersion` | `SecurityBoundaryServiceTest`, production API test | `security/key-lifecycle.md` |
@@ -26,6 +26,20 @@
 | M20/F03 threshold 原型 | implemented experimental | `crypto/threshold/*` | `ThresholdSecretSharingTest`, E13 | `algorithms/threshold-prototype.md` |
 | M21 并发限次 | implemented in-memory + JDBC atomic path | API synchronized consume, `JdbcGovernanceRepository` CAS update | `concurrentDownloadsCannotExceedAccessLimit`, `JdbcGovernanceRepositoryTest`, E10 | `security/access-counter.md`, `storage/repository-design.md` |
 | M22 原始数据/复现 | implemented | `scripts/run-all-experiments.*`, `ComplianceExperimentApplication` | E01-E14 `reports/raw`, `reports/summary` | `reports/report-template.md`, `experiments/experiment-design.md` |
+| M-001 profile 严格隔离 | implemented | `CryptoProfile`, `CryptoProfileGuard`, production OpenAPI guard | `CryptoProfileGuardTest`, `ApiIntegrationTest` | `crypto/security-boundary.md`, `deployment.md` |
+| M-004 转换证明 | implemented | `ConversionProof`, `ConversionProofService`, `PackageVerifier` | `ConversionProofServiceTest` | `audit-proof.md` |
+| M-005 撤销模式/轮换 | implemented with owner-side boundary | `KeyLifecycleService`, `RevocationService` | `KeyLifecycleServiceTest` | `revocation-and-rotation.md` |
+| M-008 非对称审计签名 | implemented | `AuditProofService` Ed25519 | `AuditProofServiceTest` | `audit-proof.md` |
+| M-014 threshold signed share | implemented experimental | `ThresholdReEncryptionService` | `ThresholdReEncryptionServiceTest` | `crypto/threshold-re-encryption.md` |
+| M-021 idempotency contract | implemented HTTP replay; durable multi-instance adapter bounded | `IdempotencyService`, `ReKeyShareApplication`, `schema.sql` | `IdempotencyServiceTest`, `ApiIntegrationTest` | `api/security-controls.md`, `deployment.md` |
+| M-025 一键复核 | implemented | `scripts/verify-all.*` | final verification run | `deployment.md` |
+| M-003 AAD 完整绑定 | implemented | `CapsuleContext`, `AadBuilder` | `CryptoProviderTest` (12 fields) | `crypto/context-binding.md` |
+| M-010 streaming/内存证据 | implemented | `AesGcmChunked*`, `EvidenceExperimentApplication` | E03 30 runs/size + four negatives | `algorithms/streaming-aead.md` |
+| M-016 数据集制度化 | implemented | `ReproducibleDataset` | `ReproducibleDatasetTest`, E15 | `experiments/dataset-design.md` |
+| M-017 状态机覆盖 | implemented | `StateTransitionGuard` | exhaustive `StateTransitionGuardTest`, lifecycle tests | `state-machines.md` |
+| M-019 敏感材料输出 | implemented | redacted crypto material `toString`, `LogSanitizer` | `LogSanitizerTest` | `secure-coding.md` |
+| M-020 租户隔离 | partial: JDBC/AAD verified; HTTP/audit tenant wiring bounded | `JdbcGovernanceRepository`, `AadBuilder` | `JdbcGovernanceRepositoryTest`, `CryptoProviderTest` | `multi-tenant-isolation.md` |
+| M-022 持久化一致性 | partial: JDBC adapter/bootstrap verified; HTTP runtime wiring bounded | `JdbcSchemaInitializer`, `JdbcGovernanceRepository` | `JdbcGovernanceRepositoryTest`, `JdbcAuditRepositoryTest` | `database-migration.md` |
 
 ## Production Integration Boundary
 

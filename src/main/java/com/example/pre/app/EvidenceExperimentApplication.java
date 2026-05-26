@@ -1,6 +1,8 @@
 package com.example.pre.app;
 
+import com.example.pre.benchmark.ReproducibleDataset;
 import com.example.pre.crypto.EncryptedKeyCapsule;
+import com.example.pre.crypto.hash.Hash;
 import com.example.pre.crypto.provider.SchemeDescriptor;
 import com.example.pre.crypto.provider.SecureEnvelopeProvider;
 import com.example.pre.crypto.symmetric.AesGcm;
@@ -8,7 +10,6 @@ import com.example.pre.crypto.symmetric.AesGcmChunkedDecryptor;
 import com.example.pre.crypto.symmetric.AesGcmChunkedEncryptor;
 import com.example.pre.crypto.symmetric.MerkleChunkTree;
 import com.example.pre.crypto.symmetric.AesGcmNonceManager;
-import com.example.pre.crypto.threshold.ThresholdSecretSharing;
 import com.example.pre.model.AlgorithmType;
 import com.example.pre.model.CapsuleContext;
 import com.example.pre.model.ReEncryptedPackage;
@@ -17,9 +18,13 @@ import com.example.pre.service.PackageVerifier;
 import com.example.pre.security.policy.PolicyEvaluator;
 import com.example.pre.security.policy.PolicyExpression;
 import com.example.pre.security.policy.PolicyRequest;
+import com.example.pre.service.ThresholdReEncryptionService;
+import com.example.pre.service.ReKeyShareException;
 import com.example.pre.util.Bytes;
 import com.example.pre.util.SecureRandomUtil;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -27,6 +32,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -40,13 +46,26 @@ public final class EvidenceExperimentApplication {
     }
 
     public static void main(String[] args) throws Exception {
-        System.setProperty("rekeyshare.nonce.registry", "target/experiment/aes-gcm-nonces.txt");
+        String nonceRegistry = System.getProperty("rekeyshare.nonce.registry",
+                "target/experiment/aes-gcm-nonces.txt");
+        System.setProperty("rekeyshare.nonce.registry", nonceRegistry);
         Files.createDirectories(RAW);
         Files.createDirectories(SUMMARY);
         Files.createDirectories(Path.of("target", "experiment"));
+        Path experimentRegistry = Path.of(nonceRegistry).normalize();
+        if (experimentRegistry.startsWith(Path.of("target", "experiment"))) {
+            Files.deleteIfExists(experimentRegistry);
+        }
+        if (Boolean.getBoolean("rekeyshare.e03.only")) {
+            runChunkedAead();
+            return;
+        }
         writeMetadata();
         runSecureEnvelopeCorrectness();
-        runChunkedAead();
+        runDatasetDistribution();
+        if (!Boolean.getBoolean("rekeyshare.e03.defer")) {
+            runChunkedAead();
+        }
         runPackageTamper();
         runNegativePolicyMatrix();
         runNonceEvidence();
@@ -66,7 +85,7 @@ public final class EvidenceExperimentApplication {
         var bob = provider.generateKeyPair("bob");
         var charlie = provider.generateKeyPair("charlie");
         int[] sizes = {1024, 100 * 1024, 1024 * 1024, 10 * 1024 * 1024};
-        int roundsPerSize = 5;
+        int roundsPerSize = Integer.getInteger("rekeyshare.e03.rounds", 30);
         int rounds = sizes.length * roundsPerSize;
         int recovered = 0;
         int unauthorizedRejected = 0;
@@ -74,7 +93,7 @@ public final class EvidenceExperimentApplication {
         rows.add("fileSizeBytes,round,encryptMs,encapsulateMs,decapsulateMs,decryptMs,recovered,unauthorizedRejected");
         for (int size : sizes) {
             for (int round = 1; round <= roundsPerSize; round++) {
-                byte[] plaintext = SecureRandomUtil.randomBytes(size);
+                byte[] plaintext = ReproducibleDataset.generate("deterministic-random", size, round);
                 byte[] dek = SecureRandomUtil.randomBytes(AesGcm.KEY_BYTES);
                 CapsuleContext context = new CapsuleContext("e01-" + size + "-" + round, "alice", "bob",
                         AlgorithmType.SECURE_ENVELOPE, "owner-key-v1", 1, "research-policy");
@@ -118,40 +137,163 @@ public final class EvidenceExperimentApplication {
                 + "Result: **" + (pass ? "PASS" : "FAIL") + "** (success and unauthorized rejection must both be 100%).\n");
     }
 
+    private static void runDatasetDistribution() throws IOException {
+        int size = 1024 * 1024;
+        int rounds = 30;
+        byte[] key = SecureRandomUtil.randomBytes(AesGcm.KEY_BYTES);
+        byte[] aad = Bytes.utf8("E15|dataset-distribution|tenant-a|object-e15|v1");
+        List<String> rows = new ArrayList<>();
+        rows.add("distribution,fileSizeBytes,round,sha256,encryptMs,decryptMs,success");
+        StringBuilder summary = new StringBuilder(header("E15 Dataset Distribution Comparison"))
+                .append("Five reproducible plaintext distributions were measured at 1 MB for 30 samples each. ")
+                .append("AES-GCM does not compress input, so this evidence measures distribution sensitivity ")
+                .append("without treating compressibility as a security gain.\n\n")
+                .append("| Distribution | Samples | Mean Encrypt Ms | Mean Decrypt Ms | Success |\n")
+                .append("| --- | ---: | ---: | ---: | --- |\n");
+        boolean pass = true;
+        for (String distribution : ReproducibleDataset.distributions()) {
+            double encryptionTotal = 0;
+            double decryptionTotal = 0;
+            boolean allSuccess = true;
+            for (int round = 1; round <= rounds; round++) {
+                byte[] plaintext = ReproducibleDataset.generate(distribution, size, round);
+                long started = System.nanoTime();
+                AesGcm.CipherText encrypted = AesGcm.encrypt(key, plaintext, aad);
+                double encryption = elapsed(started);
+                started = System.nanoTime();
+                byte[] decrypted = AesGcm.decrypt(key, encrypted.nonce(), encrypted.ciphertext(), aad);
+                double decryption = elapsed(started);
+                boolean success = Arrays.equals(plaintext, decrypted);
+                encryptionTotal += encryption;
+                decryptionTotal += decryption;
+                allSuccess &= success;
+                rows.add(String.format(Locale.ROOT, "%s,%d,%d,%s,%.4f,%.4f,%s", distribution, size, round,
+                        Hash.sha256Hex(plaintext), encryption, decryption, success));
+            }
+            pass &= allSuccess;
+            summary.append(String.format(Locale.ROOT, "| %s | %d | %.4f | %.4f | %s |\n",
+                    distribution, rounds, encryptionTotal / rounds, decryptionTotal / rounds,
+                    allSuccess ? "PASS" : "FAIL"));
+        }
+        Files.write(RAW.resolve("e15-dataset-distribution-results.csv"), rows);
+        summary.append("\nRaw data: `../raw/e15-dataset-distribution-results.csv`\n\nResult: **")
+                .append(pass ? "PASS" : "FAIL").append("** (all distributions recovered correctly).\n");
+        Files.writeString(SUMMARY.resolve("e15-dataset-distribution-summary.md"), summary.toString());
+    }
+
     private static void runChunkedAead() throws IOException {
         int[] sizes = {1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024};
-        int chunkSize = 1024 * 1024;
+        int chunkSize = Integer.getInteger("rekeyshare.e03.chunkBytes", 128 * 1024);
+        int roundsPerSize = 30;
         byte[] key = SecureRandomUtil.randomBytes(AesGcm.KEY_BYTES);
-        byte[] aad = Bytes.utf8("E03|streaming-aead|v1");
+        byte[] aad = Bytes.utf8("E03|tenant-a|object-e03|owner-alice|recipient-bob|version=1|streaming-aead");
         List<String> rows = new ArrayList<>();
-        rows.add("fileSizeBytes,chunkBytes,chunks,encryptMs,decryptVerifyMs,merkleVerified,success");
-        boolean allPass = true;
-        for (int size : sizes) {
-            Path encrypted = Files.createTempFile(Path.of("target", "experiment"), "e03-", ".cipher");
-            long start = System.nanoTime();
-            AesGcmChunkedEncryptor.Manifest manifest;
-            try (InputStream in = new PatternInputStream(size); OutputStream out = Files.newOutputStream(encrypted)) {
-                manifest = AesGcmChunkedEncryptor.encrypt(in, out, key, aad, chunkSize);
+        rows.add("fileSizeBytes,round,chunkBytes,chunks,encryptMs,decryptVerifyMs,observedHeapPeakDeltaBytes,"
+                + "observedHeapPeakPercent,configuredPlaintextBufferBytes,merkleVerified,success");
+        int integrityRejected = chunkIntegrityCases(key, aad, chunkSize);
+        boolean allPass = integrityRejected == 4;
+        double[] maxHeapPercent = new double[sizes.length];
+        for (int sizeIndex = 0; sizeIndex < sizes.length; sizeIndex++) {
+            int size = sizes[sizeIndex];
+            runStreamingWarmup(key, aad, chunkSize);
+            for (int round = 1; round <= roundsPerSize; round++) {
+                Path encrypted = Files.createTempFile(Path.of("target", "experiment"), "e03-", ".cipher");
+                MemorySampler memory = new MemorySampler();
+                long start = System.nanoTime();
+                AesGcmChunkedEncryptor.Manifest manifest;
+                memory.start();
+                try (InputStream in = new PatternInputStream(size); OutputStream out = Files.newOutputStream(encrypted)) {
+                    manifest = AesGcmChunkedEncryptor.encrypt(in, out, key, aad, chunkSize);
+                }
+                double encryption = elapsed(start);
+                String root = MerkleChunkTree.root(manifest);
+                start = System.nanoTime();
+                try (InputStream in = Files.newInputStream(encrypted)) {
+                    AesGcmChunkedDecryptor.decryptAndVerify(in, OutputStream.nullOutputStream(), key, aad, manifest, root);
+                } finally {
+                    memory.close();
+                }
+                double decryption = elapsed(start);
+                boolean success = manifest.totalPlaintextBytes() == size;
+                allPass &= success;
+                double heapPercent = 100.0 * memory.deltaBytes() / size;
+                maxHeapPercent[sizeIndex] = Math.max(maxHeapPercent[sizeIndex], heapPercent);
+                rows.add(String.format(Locale.ROOT, "%d,%d,%d,%d,%.4f,%.4f,%d,%.4f,%d,true,%s", size,
+                        round, chunkSize, manifest.chunks().size(), encryption, decryption, memory.deltaBytes(),
+                        heapPercent, chunkSize, success));
+                Files.deleteIfExists(encrypted);
             }
-            double encryption = elapsed(start);
-            String root = MerkleChunkTree.root(manifest);
-            start = System.nanoTime();
-            try (InputStream in = Files.newInputStream(encrypted)) {
-                AesGcmChunkedDecryptor.decryptAndVerify(in, OutputStream.nullOutputStream(), key, aad, manifest, root);
-            }
-            double decryption = elapsed(start);
-            boolean success = manifest.totalPlaintextBytes() == size;
-            allPass &= success;
-            rows.add(String.format(Locale.ROOT, "%d,%d,%d,%.4f,%.4f,true,%s", size, chunkSize,
-                    manifest.chunks().size(), encryption, decryption, success));
-            Files.deleteIfExists(encrypted);
         }
+        boolean hundredMbMemoryPass = maxHeapPercent[2] < 20.0;
+        allPass &= hundredMbMemoryPass;
         Files.write(RAW.resolve("e03-chunked-aead-results.csv"), rows);
+        Files.writeString(RAW.resolve("e03-chunk-integrity-results.json"), "{\"cases\":4,\"detected\":"
+                + integrityRejected + ",\"mutations\":[\"modify\",\"delete\",\"reorder\",\"aad-replace\"],"
+                + "\"result\":\"" + (integrityRejected == 4 ? "PASS" : "FAIL") + "\"}");
         Files.writeString(SUMMARY.resolve("e03-chunked-aead-summary.md"), header("E03 Chunked AEAD Scalability")
-                + "The 1 MB chunk pipeline verified 1 MB, 10 MB and 100 MB ciphertext streams. The working "
-                + "plaintext buffer is bounded by the configured 1 MB chunk size.\n\n"
-                + "Raw data: `../raw/e03-chunked-aead-results.csv`\n\n"
-                + "Result: **" + (allPass ? "PASS" : "FAIL") + "** (100 MB streamed verification completed).\n");
+                + "The streaming pipeline measured 30 runs each for 1 MB, 10 MB and 100 MB ciphertext streams. "
+                + "The reproducible runner executes this experiment in a warmed `-Xmx12m` child JVM with a "
+                + "128 KiB plaintext chunk. Raw rows record an observed heap peak delta and the configured "
+                + "plaintext buffer. Measurements use natural JVM collection behavior after warmup; observations "
+                + "include GC sampling noise and are interpreted with that constraint stated.\n\n"
+                + String.format(Locale.ROOT, "| File size | Max observed heap delta / file | Interpretation |\n"
+                        + "| ---: | ---: | --- |\n"
+                        + "| 1 MB | %.4f%% | fixed JVM overhead dominates |\n"
+                        + "| 10 MB | %.4f%% | planning range not met on this JVM |\n"
+                        + "| 100 MB | %.4f%% | %s strict `<20%%` gate |\n\n",
+                        maxHeapPercent[0], maxHeapPercent[1], maxHeapPercent[2],
+                        hundredMbMemoryPass ? "PASS" : "FAIL")
+                + "Tamper evidence: modification, deletion, reordering and AAD/context replacement were rejected "
+                + "(" + integrityRejected + "/4).\n\n"
+                + "Raw data: `../raw/e03-chunked-aead-results.csv`, "
+                + "`../raw/e03-chunk-integrity-results.json`\n\n"
+                + "Result: **" + (allPass ? "PASS" : "FAIL")
+                + "** (100 MB streamed verification and integrity matrix completed).\n");
+    }
+
+    private static void runStreamingWarmup(byte[] key, byte[] aad, int chunkSize) throws IOException {
+        Path encrypted = Files.createTempFile(Path.of("target", "experiment"), "e03-warmup-", ".cipher");
+        AesGcmChunkedEncryptor.Manifest manifest;
+        try (InputStream in = new PatternInputStream(chunkSize); OutputStream out = Files.newOutputStream(encrypted)) {
+            manifest = AesGcmChunkedEncryptor.encrypt(in, out, key, aad, chunkSize);
+        }
+        try (InputStream in = Files.newInputStream(encrypted)) {
+            AesGcmChunkedDecryptor.decryptAndVerify(in, OutputStream.nullOutputStream(), key, aad, manifest,
+                    MerkleChunkTree.root(manifest));
+        }
+        Files.deleteIfExists(encrypted);
+    }
+
+    private static int chunkIntegrityCases(byte[] key, byte[] aad, int chunkSize) throws IOException {
+        int integrityChunkSize = Math.min(chunkSize, 64 * 1024);
+        ByteArrayOutputStream encrypted = new ByteArrayOutputStream();
+        AesGcmChunkedEncryptor.Manifest manifest = AesGcmChunkedEncryptor.encrypt(
+                new PatternInputStream(2 * integrityChunkSize), encrypted, key, aad, integrityChunkSize);
+        byte[] original = encrypted.toByteArray();
+        String root = MerkleChunkTree.root(manifest);
+        int rejected = 0;
+        byte[] modified = original.clone();
+        modified[integrityChunkSize / 2] ^= 1;
+        rejected += rejectsStream(modified, key, aad, manifest, root) ? 1 : 0;
+        rejected += rejectsStream(Arrays.copyOf(original, original.length - 1), key, aad, manifest, root) ? 1 : 0;
+        int firstCipherBytes = manifest.chunks().get(0).ciphertextBytes();
+        byte[] reordered = original.clone();
+        System.arraycopy(original, firstCipherBytes, reordered, 0, firstCipherBytes);
+        System.arraycopy(original, 0, reordered, firstCipherBytes, firstCipherBytes);
+        rejected += rejectsStream(reordered, key, aad, manifest, root) ? 1 : 0;
+        rejected += rejectsStream(original, key, Bytes.utf8("E03|other-object"), manifest, root) ? 1 : 0;
+        return rejected;
+    }
+
+    private static boolean rejectsStream(byte[] ciphertext, byte[] key, byte[] aad,
+                                         AesGcmChunkedEncryptor.Manifest manifest, String root) {
+        try {
+            AesGcmChunkedDecryptor.decryptAndVerify(new ByteArrayInputStream(ciphertext),
+                    OutputStream.nullOutputStream(), key, aad, manifest, root);
+            return false;
+        } catch (RuntimeException | IOException expected) {
+            return true;
+        }
     }
 
     private static void runPackageTamper() throws IOException {
@@ -180,18 +322,21 @@ public final class EvidenceExperimentApplication {
 
     private static void runThreshold() throws IOException {
         List<String> rows = new ArrayList<>();
-        rows.add("threshold,totalShares,submitted,expectedSuccess,actualSuccess,elapsedMs");
-        boolean pass = thresholdCase(rows, 2, 3, 1, false)
-                & thresholdCase(rows, 2, 3, 2, true)
-                & thresholdCase(rows, 2, 3, 3, true)
-                & thresholdCase(rows, 3, 5, 2, false)
-                & thresholdCase(rows, 3, 5, 3, true);
+        rows.add("threshold,totalShares,submitted,round,expectedSuccess,actualSuccess,shareProofVerified,elapsedMs");
+        boolean pass = thresholdCase(rows, 2, 3, 1, 0, false)
+                & thresholdCase(rows, 3, 5, 2, 0, false);
+        for (int round = 1; round <= 30; round++) {
+            pass &= thresholdCase(rows, 2, 3, 2, round, true);
+            pass &= thresholdCase(rows, 3, 5, 3, round, true);
+        }
         Files.write(RAW.resolve("e13-threshold-results.csv"), rows);
         Files.writeString(SUMMARY.resolve("e13-threshold-summary.md"), header("E13 Threshold Prototype")
-                + "This is an experimental Shamir sharing prototype for re-key orchestration evidence; it is not "
-                + "claimed as a reviewed threshold PRE construction.\n\n"
+                + "Signed-share aggregation was measured for 30 successful samples each of t=2,n=3 and "
+                + "t=3,n=5, plus below-threshold rejection cases. This remains an experimental "
+                + "re-key orchestration prototype, not a reviewed threshold PRE construction.\n\n"
                 + "Raw data: `../raw/e13-threshold-results.csv`\n\n"
-                + "Result: **" + (pass ? "PASS" : "FAIL") + "** (fewer than k shares fail; k or more recover).\n");
+                + "Result: **" + (pass ? "PASS" : "FAIL")
+                + "** (signed shares verify; fewer than t fail; t or more recover).\n");
     }
 
     private static void runNonceEvidence() throws IOException {
@@ -270,19 +415,30 @@ public final class EvidenceExperimentApplication {
                 count, proxyActive, now);
     }
 
-    private static boolean thresholdCase(List<String> rows, int threshold, int total, int submitted, boolean expected) {
+    private static boolean thresholdCase(List<String> rows, int threshold, int total, int submitted, int round,
+                                         boolean expected) {
         byte[] secret = SecureRandomUtil.randomBytes(32);
-        var shares = ThresholdSecretSharing.split(secret, threshold, total);
+        List<String> proxyIds = new ArrayList<>();
+        for (int index = 0; index < total; index++) {
+            proxyIds.add("proxy-" + index);
+        }
+        ThresholdReEncryptionService service = new ThresholdReEncryptionService();
+        var shares = service.splitForProxies(secret, threshold, proxyIds);
+        List<ThresholdReEncryptionService.SignedShare> signed = new ArrayList<>();
+        for (int index = 0; index < submitted; index++) {
+            signed.add(service.convertShare(proxyIds.get(index), shares.get(index)));
+        }
         long start = System.nanoTime();
         boolean actual;
+        boolean proofsVerified = signed.stream().allMatch(service::verifyShare);
         try {
-            actual = java.util.Arrays.equals(secret, ThresholdSecretSharing.combine(shares.subList(0, submitted)));
-        } catch (IllegalArgumentException e) {
+            actual = java.util.Arrays.equals(secret, service.aggregate(signed));
+        } catch (ReKeyShareException e) {
             actual = false;
         }
-        rows.add(String.format(Locale.ROOT, "%d,%d,%d,%s,%s,%.4f", threshold, total, submitted,
-                expected, actual, elapsed(start)));
-        return actual == expected;
+        rows.add(String.format(Locale.ROOT, "%d,%d,%d,%d,%s,%s,%s,%.4f", threshold, total, submitted, round,
+                expected, actual, proofsVerified, elapsed(start)));
+        return actual == expected && proofsVerified;
     }
 
     private static SharedPackageV2 tamper(SharedPackageV2 issued, String field) {
@@ -364,6 +520,52 @@ public final class EvidenceExperimentApplication {
             }
             remaining -= count;
             return count;
+        }
+    }
+
+    private static final class MemorySampler implements AutoCloseable {
+        private final Runtime runtime = Runtime.getRuntime();
+        private final long baseline = usedHeap();
+        private volatile boolean sampling;
+        private volatile long peak = baseline;
+        private Thread thread;
+
+        private void start() {
+            sampling = true;
+            thread = new Thread(() -> {
+                while (sampling) {
+                    peak = Math.max(peak, usedHeap());
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }, "e03-memory-sampler");
+            thread.setDaemon(true);
+            thread.start();
+        }
+
+        private long usedHeap() {
+            return runtime.totalMemory() - runtime.freeMemory();
+        }
+
+        private long deltaBytes() {
+            return Math.max(0, peak - baseline);
+        }
+
+        @Override
+        public void close() {
+            sampling = false;
+            if (thread != null) {
+                try {
+                    thread.join(1000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            peak = Math.max(peak, usedHeap());
         }
     }
 }

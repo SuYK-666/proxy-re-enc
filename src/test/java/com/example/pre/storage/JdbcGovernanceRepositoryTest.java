@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class JdbcGovernanceRepositoryTest {
     @Test
@@ -26,6 +27,7 @@ class JdbcGovernanceRepositoryTest {
         JdbcGovernanceRepository first = new JdbcGovernanceRepository(url, "sa", "");
         Fixture fixture = fixture(3);
         first.saveWorkflow("tenant-a", fixture.owner(), fixture.recipient(), fixture.data(), fixture.grant(), fixture.dataPackage());
+        first.saveWorkflow("tenant-b", fixture.owner(), fixture.recipient(), fixture.data(), fixture.grant(), fixture.dataPackage());
 
         JdbcGovernanceRepository restarted = new JdbcGovernanceRepository(url, "sa", "");
         var executor = Executors.newFixedThreadPool(20);
@@ -56,6 +58,9 @@ class JdbcGovernanceRepositoryTest {
         restarted.revokeAndInvalidate("tenant-a", fixture.grant().grantId());
         assertEquals("INVALIDATED", restarted.snapshot(
                 "tenant-a", fixture.grant().grantId(), fixture.dataPackage().packageId()).packageStatus());
+        assertEquals("ACTIVE", restarted.snapshot(
+                "tenant-b", fixture.grant().grantId(), fixture.dataPackage().packageId()).packageStatus());
+        assertFalse(restarted.consumeGrantAccess("tenant-c", fixture.grant().grantId()));
     }
 
     private static Fixture fixture(int maxAccess) {

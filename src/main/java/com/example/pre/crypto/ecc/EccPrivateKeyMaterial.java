@@ -5,4 +5,8 @@ import com.example.pre.crypto.PrivateKeyMaterial;
 import java.math.BigInteger;
 
 public record EccPrivateKeyMaterial(BigInteger scalar) implements PrivateKeyMaterial {
+    @Override
+    public String toString() {
+        return "EccPrivateKeyMaterial[<redacted>]";
+    }
 }

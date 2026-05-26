@@ -30,6 +30,7 @@ import com.example.pre.service.DemoTokenService;
 import com.example.pre.service.EccRecipientShareService;
 import com.example.pre.service.ErrorCode;
 import com.example.pre.service.KeyManagementService;
+import com.example.pre.service.IdempotencyService;
 import com.example.pre.service.ObjectAuthorizationService;
 import com.example.pre.service.PackageVerifier;
 import com.example.pre.service.ProxyReEncryptionService;
@@ -58,6 +59,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -121,13 +123,21 @@ public final class ReKeyShareApplication {
             }
             String method = exchange.getRequestMethod();
             enforceContentType(exchange, method);
-            enforceIdempotency(exchange, state, method, path);
             Map<String, String> body = readFields(exchange);
             DemoTokenService.AuthenticatedActor auth = publicEndpoint(method, path)
                     ? new DemoTokenService.AuthenticatedActor("anonymous", UserRole.RECIPIENT, "public", "public", 0, Long.MAX_VALUE)
                     : actor(exchange, body, state);
             SecurityContext security = auth.securityContext();
             String actor = auth.userId();
+            IdempotencyService.Decision idempotency = beginIdempotency(exchange, state, method, path, actor, body);
+            if (idempotency != null && idempotency.replayed()) {
+                writeJson(exchange, idempotency.replay().status(), idempotency.replay().body());
+                return;
+            }
+            if (idempotency != null) {
+                exchange.setAttribute("rekeyshare.idempotency",
+                        new PendingResponse(state.idempotency, idempotency.pending()));
+            }
 
             if ("GET".equals(method) && "/".equals(path)) {
                 writeJson(exchange, 200, "{\"name\":\"ReKeyShare\",\"status\":\"running\",\"openapi\":\"/openapi.json\"}");
@@ -262,15 +272,21 @@ public final class ReKeyShareApplication {
 
     private static void createUser(HttpExchange exchange, ApiState state, Map<String, String> body) throws IOException {
         String userId = body.getOrDefault("userId", body.getOrDefault("username", "user-" + state.users.findAll().size()));
-        AlgorithmType algorithm = state.registry.parse(body.get("algorithm"), AlgorithmType.RSA_PRE);
+        AlgorithmType algorithm = state.registry.parse(body.get("algorithm"),
+                state.profile.demoFeaturesEnabled() ? AlgorithmType.RSA_PRE : AlgorithmType.SECURE_ENVELOPE);
+        requireAlgorithmForProfile(state, algorithm);
         UserRole role = parseRole(body.get("role"), defaultRole(userId));
         User user = state.profile.demoFeaturesEnabled()
                 ? state.userService(algorithm).createUser(userId, role)
                 : state.userService(algorithm).registerPublicOnlyUser(userId, role);
         state.keys(algorithm).registerActiveKey(user);
         String token = state.tokens.issue(user);
+        SchemeDescriptor descriptor = descriptorFor(algorithm);
         writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"userId\":\"" + json(user.userId())
                 + "\",\"role\":\"" + user.role() + "\",\"algorithm\":\"" + algorithm
+                + "\",\"algorithmSuite\":\"" + descriptor.schemeId()
+                + "\",\"securityLevel\":\"" + descriptor.securityLevel()
+                + "\",\"securityNotice\":\"" + descriptor.proofStatus()
                 + "\",\"token\":\"" + token + "\"}");
     }
 
@@ -323,6 +339,7 @@ public final class ReKeyShareApplication {
     private static void uploadEncryptedData(HttpExchange exchange, ApiState state, String actor, Map<String, String> body) throws IOException {
         User owner = requireUser(state, actor);
         AlgorithmType requested = state.registry.parse(body.get("algorithm"), state.algorithmForUser(owner));
+        requireAlgorithmForProfile(state, requested);
         if (requested != state.algorithmForUser(owner)) {
             throw new ReKeyShareException(ErrorCode.ALGORITHM_MISMATCH, "requested algorithm does not match owner key");
         }
@@ -331,7 +348,12 @@ public final class ReKeyShareApplication {
         String ownerKeyId = body.getOrDefault("ownerKeyId", "demo-key-" + owner.userId());
         String policyHash = body.getOrDefault("policyHash", "OWNER_UPLOAD");
         CapsuleContext context = new CapsuleContext(dataId, owner.userId(), owner.userId(),
-                requested, ownerKeyId, contentKeyVersion, policyHash);
+                requested, ownerKeyId, contentKeyVersion, policyHash,
+                body.getOrDefault("tenantId", "tenant-default"),
+                body.getOrDefault("grantId", "OWNER_UPLOAD"),
+                descriptorFor(requested).schemeId(),
+                body.getOrDefault("proofIssuerId", ""),
+                body.getOrDefault("operation", "OWNER_UPLOAD"));
         byte[] aad = body.containsKey("aad") ? b64decode(body.get("aad")) : com.example.pre.util.AadBuilder.build(context);
         EncryptedKeyCapsule capsule = new EncryptedKeyCapsule(
                 requested,
@@ -353,9 +375,13 @@ public final class ReKeyShareApplication {
                 body.getOrDefault("fileName", "client-encrypted.bin"),
                 body.getOrDefault("contentType", "application/octet-stream")
         ));
+        SchemeDescriptor descriptor = descriptorFor(requested);
         writeJson(exchange, 201, "{\"code\":\"SUCCESS\",\"dataId\":\"" + data.dataId()
                 + "\",\"contentKeyVersion\":" + data.contentKeyVersion()
-                + ",\"ciphertextHash\":\"" + data.ciphertextHash() + "\"}");
+                + ",\"ciphertextHash\":\"" + data.ciphertextHash()
+                + "\",\"algorithmSuite\":\"" + descriptor.schemeId()
+                + "\",\"securityLevel\":\"" + descriptor.securityLevel()
+                + "\",\"securityNotice\":\"" + descriptor.proofStatus() + "\"}");
     }
 
     private static void getData(HttpExchange exchange, ApiState state, String actor, String dataId) throws IOException {
@@ -367,6 +393,7 @@ public final class ReKeyShareApplication {
     }
 
     private static void createGrant(HttpExchange exchange, ApiState state, String actor, Map<String, String> body) throws IOException {
+        requireDemoFeature(state, "baseline grant creation");
         String dataId = body.get("dataId");
         String recipientId = body.get("recipientId");
         state.objectAuth.assertCanCreateGrant(actor, dataId);
@@ -380,6 +407,7 @@ public final class ReKeyShareApplication {
     }
 
     private static void createEccGrant(HttpExchange exchange, ApiState state, String actor, Map<String, String> body) throws IOException {
+        requireDemoFeature(state, "ECC baseline grant creation");
         String dataId = body.get("dataId");
         String recipientId = body.get("recipientId");
         String sessionId = body.get("sessionId");
@@ -416,6 +444,7 @@ public final class ReKeyShareApplication {
     }
 
     private static void createReKeySession(HttpExchange exchange, ApiState state, String actor, Map<String, String> body) throws IOException {
+        requireDemoFeature(state, "ECC baseline rekey session");
         String dataId = body.get("dataId");
         String recipientId = body.get("recipientId");
         state.objectAuth.assertCanCreateGrant(actor, dataId);
@@ -476,6 +505,7 @@ public final class ReKeyShareApplication {
     }
 
     private static void proxyReEncrypt(HttpExchange exchange, ApiState state, SecurityContext actor, Map<String, String> body) throws IOException {
+        requireDemoFeature(state, "baseline proxy transformation");
         ShareGrant grant = state.grants.findById(body.get("grantId"))
                 .orElseThrow(() -> new ReKeyShareException(ErrorCode.GRANT_NOT_FOUND, "grant not found"));
         state.proxyNodes.assertCanProxy(actor, grant.algorithm());
@@ -506,19 +536,30 @@ public final class ReKeyShareApplication {
     private static void getSharedPackage(HttpExchange exchange, ApiState state, String actor, String packageId) throws IOException {
         ReEncryptedPackage dataPackage;
         ShareGrant grant;
+        SharedPackageV2 v2;
         synchronized (state.grants) {
             dataPackage = state.objectAuth.assertCanDownloadPackage(actor, packageId);
             grant = state.grants.findById(dataPackage.grantId())
                     .orElseThrow(() -> new ReKeyShareException(ErrorCode.GRANT_NOT_FOUND, "grant not found"));
+            v2 = SharedPackageV2.issue(dataPackage, descriptorFor(dataPackage.algorithm()), grant.expiresAt());
+            try {
+                new PackageVerifier().verifyFormalPackage(v2, grant, state.conversionProofs, Instant.now());
+            } catch (ReKeyShareException e) {
+                state.audit.record(actor, "CONVERSION_PROOF_VERIFY_FAILED", packageId, false, e.code().name());
+                throw e;
+            }
             state.grants.save(grant.incrementDownload());
         }
-        SharedPackageV2 v2 = SharedPackageV2.issue(dataPackage, descriptorFor(dataPackage.algorithm()), grant.expiresAt());
-        new PackageVerifier().verify(v2, Instant.now());
         state.audit.record(actor, "DOWNLOAD_PACKAGE", packageId, true, dataPackage.grantId());
         writeJson(exchange, 200, "{\"code\":\"SUCCESS\",\"packageVersion\":\"" + v2.packageVersion()
                 + "\",\"schemeId\":\"" + v2.schemeId()
+                + "\",\"algorithmSuite\":\"" + v2.schemeId()
+                + "\",\"securityLevel\":\"" + descriptorFor(dataPackage.algorithm()).securityLevel()
+                + "\",\"securityNotice\":\"" + v2.proofStatus()
                 + "\",\"parameterSpec\":\"" + json(v2.parameterSpec())
                 + "\",\"proofStatus\":\"" + v2.proofStatus()
+                + "\",\"conversionProofDigest\":\"" + com.example.pre.service.ConversionProofService.digest(dataPackage.conversionProof())
+                + "\",\"conversionProofProxyId\":\"" + json(dataPackage.conversionProof().proxyId())
                 + "\",\"packageId\":\"" + packageId
                 + "\",\"dataId\":\"" + dataPackage.dataId()
                 + "\",\"ownerId\":\"" + dataPackage.ownerId()
@@ -630,17 +671,22 @@ public final class ReKeyShareApplication {
         }
     }
 
-    private static void enforceIdempotency(HttpExchange exchange, ApiState state, String method, String path) {
+    private static IdempotencyService.Decision beginIdempotency(HttpExchange exchange, ApiState state, String method,
+                                                                 String path, String actor, Map<String, String> body) {
         if (!"POST".equals(method)) {
-            return;
+            return null;
         }
         String key = exchange.getRequestHeaders().getFirst("Idempotency-Key");
         if (key == null || key.isBlank()) {
-            return;
+            return null;
         }
-        String scoped = method + "|" + path + "|" + key;
-        if (!state.idempotencyKeys.add(scoped)) {
-            throw new ReKeyShareException(ErrorCode.POLICY_VIOLATION, "duplicate idempotency key");
+        return state.idempotency.begin(key, actor, method, path, body.toString());
+    }
+
+    private static void requireAlgorithmForProfile(ApiState state, AlgorithmType algorithm) {
+        if (!state.profile.demoFeaturesEnabled() && algorithm != AlgorithmType.SECURE_ENVELOPE) {
+            throw new ReKeyShareException(ErrorCode.CRYPTO_PROFILE_NOT_ALLOWED,
+                    "production profile permits only SECURE_ENVELOPE");
         }
     }
 
@@ -734,6 +780,11 @@ public final class ReKeyShareApplication {
     }
 
     private static void writeJson(HttpExchange exchange, int status, String body) throws IOException {
+        Object pending = exchange.getAttribute("rekeyshare.idempotency");
+        if (pending instanceof PendingResponse response) {
+            response.service().complete(response.pending(), status, body);
+            exchange.setAttribute("rekeyshare.idempotency", null);
+        }
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
@@ -748,7 +799,7 @@ public final class ReKeyShareApplication {
             case RATE_LIMITED -> 429;
             case PAYLOAD_TOO_LARGE -> 413;
             case INVALID_REQUEST, ALGORITHM_MISMATCH, CAPSULE_TAMPERED, CIPHERTEXT_TAMPERED, PACKAGE_INVALID,
-                    INVALID_RECIPIENT_SHARE, INVALID_REKEY_SESSION -> 400;
+                    INVALID_RECIPIENT_SHARE, INVALID_REKEY_SESSION, CRYPTO_CONTEXT_MISMATCH -> 400;
             default -> 403;
         };
     }
@@ -807,12 +858,14 @@ public final class ReKeyShareApplication {
         }
         appendPath(sb, "/api/data/upload-encrypted", "post", true, "Upload client-side encrypted content and PRE capsule");
         appendPath(sb, "/api/data/{dataId}", "get", true, "Read data metadata with object authorization");
-        appendPath(sb, "/api/grants", "post", true, "Create RSA grant");
-        appendPath(sb, "/api/grants/ecc", "post", true, "Create ECC grant from verified recipient share");
         appendPath(sb, "/api/grants/{grantId}/revoke", "post", true, "Revoke grant");
-        appendPath(sb, "/api/rekey-sessions", "post", true, "Create ECC recipient-share session");
-        appendPath(sb, "/api/rekey-sessions/{sessionId}/recipient-share", "post", true, "Submit signed ECC recipient share");
-        appendPath(sb, "/api/proxy/re-encrypt", "post", true, "Proxy capsule transform");
+        if (profile.demoFeaturesEnabled()) {
+            appendPath(sb, "/api/grants", "post", true, "Demo RSA baseline grant");
+            appendPath(sb, "/api/grants/ecc", "post", true, "Demo ECC baseline grant from verified recipient share");
+            appendPath(sb, "/api/rekey-sessions", "post", true, "Demo ECC recipient-share session");
+            appendPath(sb, "/api/rekey-sessions/{sessionId}/recipient-share", "post", true, "Demo signed ECC recipient share");
+            appendPath(sb, "/api/proxy/re-encrypt", "post", true, "Demo baseline proxy capsule transform");
+        }
         appendPath(sb, "/api/proxy-nodes", "post", true, "Register proxy node");
         appendPath(sb, "/api/proxy-nodes/{proxyId}/revoke", "post", true, "Revoke proxy node");
         appendPath(sb, "/api/shared-packages/{packageId}", "get", true, "Download encrypted package metadata");
@@ -835,9 +888,9 @@ public final class ReKeyShareApplication {
         sb.append("},\"components\":{\"securitySchemes\":{\"bearerAuth\":{\"type\":\"http\",\"scheme\":\"bearer\"}},")
                 .append("\"schemas\":{")
                 .append("\"Error\":{\"type\":\"object\",\"properties\":{\"success\":{\"type\":\"boolean\"},\"code\":{\"type\":\"string\"},\"message\":{\"type\":\"string\"},\"requestId\":{\"type\":\"string\"}}},")
-                .append("\"CreateUserRequest\":{\"type\":\"object\",\"properties\":{\"userId\":{\"type\":\"string\"},\"role\":{\"type\":\"string\"},\"algorithm\":{\"type\":\"string\",\"enum\":[\"RSA_PRE\",\"ECC_PRE\"]}}},")
+                .append("\"CreateUserRequest\":{\"type\":\"object\",\"properties\":{\"userId\":{\"type\":\"string\"},\"role\":{\"type\":\"string\"},\"algorithm\":{\"type\":\"string\",\"enum\":[\"SECURE_ENVELOPE\",\"RSA_PRE\",\"ECC_PRE\"]}}},")
                 .append("\"UploadDataRequest\":{\"type\":\"object\",\"properties\":{\"algorithm\":{\"type\":\"string\",\"enum\":[\"RSA_PRE\",\"ECC_PRE\"]},\"fileName\":{\"type\":\"string\"},\"contentType\":{\"type\":\"string\"},\"plaintext\":{\"type\":\"string\",\"description\":\"demo-only\"},\"plaintextBase64\":{\"type\":\"string\",\"description\":\"demo-only\"}}},")
-                .append("\"UploadEncryptedRequest\":{\"type\":\"object\",\"required\":[\"encryptedContent\",\"contentNonce\",\"capsuleHeader\",\"wrappedKey\",\"keyNonce\"],\"properties\":{\"algorithm\":{\"type\":\"string\",\"enum\":[\"RSA_PRE\",\"ECC_PRE\"]},\"dataId\":{\"type\":\"string\"},\"encryptedContent\":{\"type\":\"string\",\"format\":\"byte\"},\"contentNonce\":{\"type\":\"string\",\"format\":\"byte\"},\"aad\":{\"type\":\"string\",\"format\":\"byte\"},\"capsuleHeader\":{\"type\":\"string\",\"format\":\"byte\"},\"wrappedKey\":{\"type\":\"string\",\"format\":\"byte\"},\"keyNonce\":{\"type\":\"string\",\"format\":\"byte\"}}},")
+                .append("\"UploadEncryptedRequest\":{\"type\":\"object\",\"required\":[\"encryptedContent\",\"contentNonce\",\"capsuleHeader\",\"wrappedKey\",\"keyNonce\"],\"properties\":{\"algorithm\":{\"type\":\"string\",\"enum\":[\"SECURE_ENVELOPE\",\"RSA_PRE\",\"ECC_PRE\"]},\"dataId\":{\"type\":\"string\"},\"encryptedContent\":{\"type\":\"string\",\"format\":\"byte\"},\"contentNonce\":{\"type\":\"string\",\"format\":\"byte\"},\"aad\":{\"type\":\"string\",\"format\":\"byte\"},\"capsuleHeader\":{\"type\":\"string\",\"format\":\"byte\"},\"wrappedKey\":{\"type\":\"string\",\"format\":\"byte\"},\"keyNonce\":{\"type\":\"string\",\"format\":\"byte\"}}},")
                 .append("\"CreateGrantRequest\":{\"type\":\"object\",\"properties\":{\"dataId\":{\"type\":\"string\"},\"recipientId\":{\"type\":\"string\"},\"maxAccessCount\":{\"type\":\"integer\"},\"expiresInSeconds\":{\"type\":\"integer\"},\"purpose\":{\"type\":\"string\"}}},")
                 .append("\"ProxyReEncryptRequest\":{\"type\":\"object\",\"properties\":{\"grantId\":{\"type\":\"string\"}}},")
                 .append("\"SharedPackageResponse\":{\"type\":\"object\",\"properties\":{\"packageId\":{\"type\":\"string\"},\"dataId\":{\"type\":\"string\"},\"ownerId\":{\"type\":\"string\"},\"recipientId\":{\"type\":\"string\"},\"algorithm\":{\"type\":\"string\"},\"contentKeyVersion\":{\"type\":\"integer\"},\"ciphertext\":{\"type\":\"string\",\"format\":\"byte\"},\"nonce\":{\"type\":\"string\",\"format\":\"byte\"},\"aad\":{\"type\":\"string\",\"format\":\"byte\"},\"reEncryptedCapsule\":{\"type\":\"object\"},\"grantPolicyHash\":{\"type\":\"string\"},\"grantContextHash\":{\"type\":\"string\"}}}")
@@ -856,6 +909,9 @@ public final class ReKeyShareApplication {
         sb.append("}},");
     }
 
+    private record PendingResponse(IdempotencyService service, IdempotencyService.Pending pending) {
+    }
+
     private static final class ApiState {
         final RuntimeProfile profile;
         final SchemeRegistry registry = new SchemeRegistry();
@@ -871,10 +927,11 @@ public final class ReKeyShareApplication {
         final ObjectAuthorizationService objectAuth = new ObjectAuthorizationService(dataRepository, grants, packages, auditRepository);
         final StorageSnapshotService storage = new StorageSnapshotService(users, dataRepository, grants, packages, auditRepository);
         final EccRecipientShareService eccShares = new EccRecipientShareService();
-        final AuditProofService auditProof = new AuditProofService("rekeyshare-demo-audit-proof-secret");
+        final AuditProofService auditProof = new AuditProofService();
+        final com.example.pre.service.ConversionProofService conversionProofs = new com.example.pre.service.ConversionProofService();
         final BenchmarkResultService benchmark = new BenchmarkResultService();
         final SimpleRateLimiter rateLimiter = new SimpleRateLimiter(20, 60);
-        final java.util.Set<String> idempotencyKeys = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final IdempotencyService idempotency = new IdempotencyService(Duration.ofHours(24));
         final ProxyNodeService proxyNodes = new ProxyNodeService(auditRepository);
         final boolean legacyActorHeaderEnabled = false;
 
@@ -904,7 +961,8 @@ public final class ReKeyShareApplication {
         }
 
         ProxyReEncryptionService proxy(AlgorithmType algorithm) {
-            return new ProxyReEncryptionService(registry.get(algorithm), dataRepository, grants, packages, objectAuth, auditRepository);
+            return new ProxyReEncryptionService(registry.get(algorithm), dataRepository, grants, packages, objectAuth,
+                    auditRepository, conversionProofs);
         }
 
         RevocationService revocation(AlgorithmType algorithm) {

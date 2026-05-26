@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,5 +32,22 @@ class AesGcmChunkedDecryptorTest {
         assertThrows(IllegalArgumentException.class,
                 () -> AesGcmChunkedDecryptor.decryptAndVerify(new ByteArrayInputStream(damaged),
                         new ByteArrayOutputStream(), key, aad, manifest, root));
+
+        byte[] deleted = Arrays.copyOf(encrypted.toByteArray(), encrypted.size() - 1);
+        assertThrows(IllegalArgumentException.class,
+                () -> AesGcmChunkedDecryptor.decryptAndVerify(new ByteArrayInputStream(deleted),
+                        new ByteArrayOutputStream(), key, aad, manifest, root));
+
+        int firstChunk = manifest.chunks().get(0).ciphertextBytes();
+        byte[] reordered = encrypted.toByteArray();
+        System.arraycopy(encrypted.toByteArray(), firstChunk, reordered, 0, firstChunk);
+        System.arraycopy(encrypted.toByteArray(), 0, reordered, firstChunk, firstChunk);
+        assertThrows(IllegalArgumentException.class,
+                () -> AesGcmChunkedDecryptor.decryptAndVerify(new ByteArrayInputStream(reordered),
+                        new ByteArrayOutputStream(), key, aad, manifest, root));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> AesGcmChunkedDecryptor.decryptAndVerify(new ByteArrayInputStream(encrypted.toByteArray()),
+                        new ByteArrayOutputStream(), key, Bytes.utf8("large-file:data-2:v1"), manifest, root));
     }
 }

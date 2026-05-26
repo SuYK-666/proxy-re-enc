@@ -83,6 +83,11 @@ public final class DataSecurityService {
         if (command.originalCapsule() == null) {
             throw new ReKeyShareException(ErrorCode.INVALID_REQUEST, "originalCapsule is required");
         }
+        byte[] expectedAad = AadBuilder.build(command.context());
+        if (!java.util.Arrays.equals(expectedAad, command.aad())) {
+            throw new ReKeyShareException(ErrorCode.CRYPTO_CONTEXT_MISMATCH,
+                    "AAD must match canonical capsule context");
+        }
         scheme.validateCapsule(command.originalCapsule(), command.context());
         EncryptedDataPackage dataPackage = EncryptedDataPackage.uploadedEncrypted(
                 command.context().dataId(),
@@ -144,7 +149,7 @@ public final class DataSecurityService {
     }
 
     private AlgorithmType algorithm() {
-        return "RSA-PRE".equals(scheme.name()) ? AlgorithmType.RSA_PRE : AlgorithmType.ECC_PRE;
+        return scheme.algorithm();
     }
 
     public static CapsuleContext capsuleContext(EncryptedDataPackage dataPackage) {
@@ -177,7 +182,12 @@ public final class DataSecurityService {
                 dataPackage.algorithm(),
                 dataPackage.ownerKeyId(),
                 dataPackage.contentKeyVersion(),
-                grant.policyHash()
+                grant.policyHash(),
+                "tenant-default",
+                grant.grantId(),
+                dataPackage.algorithm().name(),
+                "proxy",
+                "RE_ENCRYPT"
         );
     }
 

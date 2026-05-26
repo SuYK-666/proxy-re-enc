@@ -10,4 +10,9 @@ public record EccReEncryptionKey(BigInteger scalar) implements ReEncryptionKey {
     public AlgorithmType algorithm() {
         return AlgorithmType.ECC_PRE;
     }
+
+    @Override
+    public String toString() {
+        return "EccReEncryptionKey[<redacted>]";
+    }
 }

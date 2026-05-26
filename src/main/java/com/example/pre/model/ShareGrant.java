@@ -100,9 +100,13 @@ public record ShareGrant(
     }
 
     public ShareGrant revoke() {
+        return revoke("manual revoke");
+    }
+
+    public ShareGrant revoke(String reason) {
         return new ShareGrant(grantId, dataId, ownerId, recipientId, algorithm, GrantStatus.REVOKED, policy, policyHash,
                 reKey, accessCount, reEncryptCount, downloadCount, decryptCount, previewCount,
-                createdAt, expiresAt, Instant.now(), "manual revoke", contentKeyVersion);
+                createdAt, expiresAt, Instant.now(), reason, contentKeyVersion);
     }
 
     public ShareGrant expire() {

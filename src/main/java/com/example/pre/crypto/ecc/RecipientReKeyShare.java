@@ -12,4 +12,9 @@ public record RecipientReKeyShare(
     public RecipientReKeyShare(BigInteger maskedScalarShare) {
         this(maskedScalarShare, "", "", Instant.now().plusSeconds(300));
     }
+
+    @Override
+    public String toString() {
+        return "RecipientReKeyShare[<redacted>,sessionId=" + sessionId + "]";
+    }
 }

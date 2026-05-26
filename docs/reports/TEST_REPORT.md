@@ -27,7 +27,7 @@ BenchmarkApplication: PASS
 | Capsule context | Wrong dataId/policy context fails |
 | ECC recipient share | Wrong recipient, challenge, and signature are rejected |
 | Audit chain | Tamper detection and chain verification pass |
-| Audit proof | Merkle root and demo signature are exported |
+| Audit proof | Merkle root and Ed25519 signature checkpoint are exported and verified |
 | Snapshot persistence | JSON snapshot hash export, import-check, and repository manifest pass |
 | Benchmark summary | CSV is parsed into structured grouped JSON |
 

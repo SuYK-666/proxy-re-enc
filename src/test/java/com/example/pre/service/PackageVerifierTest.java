@@ -44,6 +44,17 @@ class PackageVerifierTest {
                         () -> new PackageVerifier().verify(expired, Instant.now())).code());
     }
 
+    @Test
+    void rejectsUnknownPackageVersion() {
+        SharedPackageV2 issued = SharedPackageV2.issue(fixture(Bytes.utf8("ciphertext")), descriptor,
+                Instant.now().plusSeconds(30));
+        SharedPackageV2 unknown = new SharedPackageV2("v99", issued.schemeId(), issued.parameterSpec(),
+                issued.proofStatus(), issued.keyVersion(), issued.expiresAt(), issued.payload(), issued.manifest());
+        assertEquals(ErrorCode.PACKAGE_INVALID,
+                assertThrows(ReKeyShareException.class,
+                        () -> new PackageVerifier().verify(unknown, Instant.now())).code());
+    }
+
     private static ReEncryptedPackage fixture(byte[] ciphertext) {
         return new ReEncryptedPackage("data-1", "alice", "bob", AlgorithmType.RSA_PRE,
                 ciphertext, Bytes.utf8("nonce-12byte"), Bytes.utf8("aad"),

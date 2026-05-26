@@ -1,8 +1,6 @@
 # RSA vs ECC Benchmark
 
-RSA-PRE and ECC-PRE are measured through the same lifecycle: key generation,
-AES encryption, PRE encapsulation, re-key generation, proxy re-encryption,
-decapsulation, and AES decryption.
+RSA-PRE and ECC-PRE are measured through the same lifecycle: key generation, AES encryption, PRE encapsulation, re-key generation, proxy re-encryption, decapsulation, and AES decryption.
 
 The PRE stages process the 32-byte DEK capsule, so their cost is mostly independent of plaintext size. AES-GCM stages scale with file size.
 

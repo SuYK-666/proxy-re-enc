@@ -4,6 +4,8 @@ import com.example.pre.crypto.PreScheme;
 import com.example.pre.crypto.ecc.EccPreScheme;
 import com.example.pre.crypto.rsa.RsaCommonModulusParameters;
 import com.example.pre.crypto.rsa.RsaPreScheme;
+import com.example.pre.crypto.provider.SecureEnvelopeSchemeAdapter;
+import com.example.pre.crypto.envelope.SecureEnvelopePublicKey;
 import com.example.pre.model.AlgorithmType;
 import com.example.pre.model.User;
 import com.example.pre.crypto.rsa.RsaPublicKeyMaterial;
@@ -17,6 +19,7 @@ public final class SchemeRegistry {
     public SchemeRegistry() {
         schemes.put(AlgorithmType.RSA_PRE, new RsaPreScheme(RsaCommonModulusParameters.generateProduction(3072)));
         schemes.put(AlgorithmType.ECC_PRE, new EccPreScheme());
+        schemes.put(AlgorithmType.SECURE_ENVELOPE, new SecureEnvelopeSchemeAdapter());
     }
 
     public PreScheme get(AlgorithmType algorithm) {
@@ -28,9 +31,13 @@ public final class SchemeRegistry {
     }
 
     public PreScheme forUser(User user) {
-        return get(user.keyPair().publicKey() instanceof RsaPublicKeyMaterial
-                ? AlgorithmType.RSA_PRE
-                : AlgorithmType.ECC_PRE);
+        if (user.keyPair().publicKey() instanceof RsaPublicKeyMaterial) {
+            return get(AlgorithmType.RSA_PRE);
+        }
+        if (user.keyPair().publicKey() instanceof SecureEnvelopePublicKey) {
+            return get(AlgorithmType.SECURE_ENVELOPE);
+        }
+        return get(AlgorithmType.ECC_PRE);
     }
 
     public AlgorithmType parse(String value, AlgorithmType fallback) {

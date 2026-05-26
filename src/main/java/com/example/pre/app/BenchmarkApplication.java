@@ -1,5 +1,6 @@
 package com.example.pre.app;
 
+import com.example.pre.benchmark.ReproducibleDataset;
 import com.example.pre.crypto.EncryptedKeyCapsule;
 import com.example.pre.crypto.PreScheme;
 import com.example.pre.crypto.ReEncryptionKey;
@@ -15,6 +16,7 @@ import com.example.pre.crypto.rsa.RsaPrivateKeyMaterial;
 import com.example.pre.crypto.rsa.RsaPublicKeyMaterial;
 import com.example.pre.crypto.rsa.RsaReKeyGenerator;
 import com.example.pre.crypto.symmetric.AesGcm;
+import com.example.pre.crypto.hash.Hash;
 import com.example.pre.model.CapsuleContext;
 import com.example.pre.model.UserKeyPair;
 import com.example.pre.util.AadBuilder;
@@ -37,6 +39,7 @@ public final class BenchmarkApplication {
                 "docs/reports/summary"));
         Files.createDirectories(rawOutput.getParent());
         Files.createDirectories(summaryDirectory);
+        writeDatasetManifest(rawOutput.getParent().resolve("dataset-manifest.json"));
         List<String> rows = new ArrayList<>();
         rows.add("algorithm,parameterSpec,fileSizeBytes,round,keyGenMs,aesEncryptMs,encapsulateMs,reKeyGenMs,reEncryptMs,decapsulateMs,aesDecryptMs,totalMs,capsuleBytes,ciphertextBytes,success");
         benchmark(new RsaPreScheme(RsaCommonModulusParameters.generate(3072)), "common-modulus-3072-demo", rows);
@@ -82,7 +85,7 @@ public final class BenchmarkApplication {
     }
 
     private static BenchmarkRow runRound(PreScheme scheme, String parameterSpec, int fileSize, int round) {
-        byte[] plaintext = SecureRandomUtil.randomBytes(fileSize);
+        byte[] plaintext = dataset(fileSize, round);
         CapsuleContext capsuleContext = new CapsuleContext(
                 "benchmark-" + fileSize + "-" + round,
                 "owner",
@@ -148,6 +151,31 @@ public final class BenchmarkApplication {
 
     private static double elapsedMs(long startNs) {
         return (System.nanoTime() - startNs) / 1_000_000.0;
+    }
+
+    private static byte[] dataset(int fileSize, int round) {
+        return ReproducibleDataset.generate("deterministic-random", fileSize, round);
+    }
+
+    private static void writeDatasetManifest(Path output) throws Exception {
+        int[] sizes = {1024, 100 * 1024, 1024 * 1024, 10 * 1024 * 1024};
+        StringBuilder json = new StringBuilder("{\"generator\":\"ReproducibleDataset-v1\",\"seed\":\"0x52454b5348415245\",")
+                .append("\"roundDerivation\":\"seed XOR (fileSize << 16) XOR round\",")
+                .append("\"canonicalRound\":1,\"samples\":[");
+        boolean first = true;
+        for (String distribution : ReproducibleDataset.distributions()) {
+            for (int size : sizes) {
+                if (!first) {
+                    json.append(',');
+                }
+                first = false;
+                json.append("{\"distribution\":\"").append(distribution).append("\",\"fileSizeBytes\":")
+                        .append(size).append(",\"sha256\":\"")
+                        .append(Hash.sha256Hex(ReproducibleDataset.generate(distribution, size, 1))).append("\"}");
+            }
+        }
+        json.append("]}");
+        Files.writeString(output, json.toString());
     }
 
     private static String summary(List<String> rows) {

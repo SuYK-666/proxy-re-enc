@@ -8,4 +8,8 @@ public record RsaPrivateKeyMaterial(
         BigInteger modulus,
         BigInteger privateExponent
 ) implements PrivateKeyMaterial {
+    @Override
+    public String toString() {
+        return "RsaPrivateKeyMaterial[<redacted>]";
+    }
 }

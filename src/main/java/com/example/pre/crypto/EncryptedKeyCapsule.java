@@ -18,6 +18,11 @@ public record EncryptedKeyCapsule(
         String contextHash,
         Instant createdAt
 ) {
+    @Override
+    public String toString() {
+        return "EncryptedKeyCapsule[algorithm=" + algorithm + ",capsuleId=" + capsuleId
+                + ",material=<redacted>]";
+    }
     public EncryptedKeyCapsule(
             AlgorithmType algorithm,
             byte[] header,

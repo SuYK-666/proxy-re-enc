@@ -12,4 +12,10 @@ public record ThresholdReKeyShare(int threshold, int totalShares, int index, byt
     public byte[] value() {
         return value.clone();
     }
+
+    @Override
+    public String toString() {
+        return "ThresholdReKeyShare[threshold=" + threshold + ",totalShares=" + totalShares
+                + ",index=" + index + ",value=<redacted>]";
+    }
 }

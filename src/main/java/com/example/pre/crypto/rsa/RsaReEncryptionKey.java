@@ -10,4 +10,9 @@ public record RsaReEncryptionKey(BigInteger modulus, BigInteger exponent) implem
     public AlgorithmType algorithm() {
         return AlgorithmType.RSA_PRE;
     }
+
+    @Override
+    public String toString() {
+        return "RsaReEncryptionKey[<redacted>]";
+    }
 }

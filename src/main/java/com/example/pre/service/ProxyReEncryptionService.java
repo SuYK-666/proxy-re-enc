@@ -24,6 +24,7 @@ public final class ProxyReEncryptionService {
     private final ReEncryptedPackageRepository packageRepository;
     private final ObjectAuthorizationService authorization;
     private final AuditRepository audit;
+    private final ConversionProofService conversionProofs;
 
     public ProxyReEncryptionService(
             PreScheme scheme,
@@ -33,12 +34,26 @@ public final class ProxyReEncryptionService {
             ObjectAuthorizationService authorization,
             AuditRepository audit
     ) {
+        this(scheme, dataRepository, grantRepository, packageRepository, authorization, audit,
+                new ConversionProofService());
+    }
+
+    public ProxyReEncryptionService(
+            PreScheme scheme,
+            DataRepository dataRepository,
+            GrantRepository grantRepository,
+            ReEncryptedPackageRepository packageRepository,
+            ObjectAuthorizationService authorization,
+            AuditRepository audit,
+            ConversionProofService conversionProofs
+    ) {
         this.scheme = scheme;
         this.dataRepository = dataRepository;
         this.grantRepository = grantRepository;
         this.packageRepository = packageRepository;
         this.authorization = authorization;
         this.audit = audit;
+        this.conversionProofs = conversionProofs;
     }
 
     public ReEncryptedPackage reEncrypt(SecurityContext proxyActor, String grantId) {
@@ -83,9 +98,11 @@ public final class ProxyReEncryptionService {
                     ""
             );
             dataPackage = dataPackage.withIssuedManifestHash(PackageManifest.issue(dataPackage).manifestHash());
+            dataPackage = dataPackage.withConversionProof(conversionProofs.issue(dataPackage, grant, proxyActor.userId()));
             packageRepository.save(dataPackage);
             grantRepository.save(grant.incrementReEncrypt());
-            audit.record(new AuditEvent(Instant.now(), proxyActor.userId(), "PROXY_REENCRYPT", dataPackage.packageId(), true, scheme.name()));
+            audit.record(new AuditEvent(Instant.now(), proxyActor.userId(), "PROXY_REENCRYPT", dataPackage.packageId(),
+                    true, "proofDigest=" + ConversionProofService.digest(dataPackage.conversionProof())));
             return dataPackage;
         }
     }

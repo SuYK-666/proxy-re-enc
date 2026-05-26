@@ -11,13 +11,18 @@ public final class AadBuilder {
     }
 
     public static String buildString(CapsuleContext context) {
-        return lengthPrefix("dataId", context.dataId())
+        return lengthPrefix("tenantId", context.tenantId())
+                + lengthPrefix("dataId", context.dataId())
                 + lengthPrefix("ownerId", context.ownerId())
                 + lengthPrefix("recipientId", context.recipientId())
                 + lengthPrefix("algorithm", context.algorithm().name())
+                + lengthPrefix("algorithmSuite", context.algorithmSuite())
                 + lengthPrefix("ownerKeyId", context.ownerKeyId())
                 + lengthPrefix("contentKeyVersion", Integer.toString(context.contentKeyVersion()))
-                + lengthPrefix("policyHash", context.policyHash());
+                + lengthPrefix("policyHash", context.policyHash())
+                + lengthPrefix("grantId", context.grantId())
+                + lengthPrefix("proofIssuerId", context.proofIssuerId())
+                + lengthPrefix("operation", context.operation());
     }
 
     private static String lengthPrefix(String name, String value) {

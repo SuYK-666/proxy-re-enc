@@ -50,4 +50,20 @@ class AesGcmNonceManagerTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void acceptsLargeAppendBatchWithoutReloadingAwayReservations() {
+        AesGcmNonceManager.clearForTest();
+        byte[] key = SecureRandomUtil.randomBytes(AesGcm.KEY_BYTES);
+        for (int index = 0; index < 2000; index++) {
+            byte[] nonce = new byte[AesGcm.NONCE_BYTES];
+            nonce[0] = (byte) (index >>> 8);
+            nonce[1] = (byte) index;
+            assertTrue(AesGcmNonceManager.reserve(key, nonce));
+        }
+        byte[] replay = new byte[AesGcm.NONCE_BYTES];
+        replay[0] = 1;
+        replay[1] = 1;
+        assertFalse(AesGcmNonceManager.reserve(key, replay));
+    }
 }

@@ -51,16 +51,71 @@ CREATE TABLE IF NOT EXISTS packages (
   recipient_id VARCHAR(128) NOT NULL,
   status VARCHAR(32) NOT NULL,
   content_key_version INT NOT NULL,
+  conversion_proof_digest VARCHAR(128),
+  proof_public_key_id VARCHAR(128),
   created_at TIMESTAMP NOT NULL,
   PRIMARY KEY (tenant_id, package_id),
   FOREIGN KEY (tenant_id, grant_id) REFERENCES grants(tenant_id, grant_id)
 );
 
 CREATE TABLE IF NOT EXISTS aes_gcm_nonces (
+  tenant_id VARCHAR(128) NOT NULL DEFAULT 'local',
+  key_id VARCHAR(128) NOT NULL DEFAULT 'legacy-fingerprint',
   key_fingerprint VARCHAR(128) NOT NULL,
   nonce VARCHAR(64) NOT NULL,
+  allocation_status VARCHAR(32) NOT NULL DEFAULT 'COMMITTED',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (key_fingerprint, nonce)
+  PRIMARY KEY (tenant_id, key_id, nonce),
+  UNIQUE (key_fingerprint, nonce)
+);
+
+CREATE TABLE IF NOT EXISTS key_versions (
+  tenant_id VARCHAR(128) NOT NULL,
+  key_id VARCHAR(128) NOT NULL,
+  owner_id VARCHAR(128) NOT NULL,
+  version INT NOT NULL,
+  algorithm_suite VARCHAR(128) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  retired_at TIMESTAMP,
+  rotation_reason VARCHAR(256),
+  PRIMARY KEY (tenant_id, key_id, version),
+  FOREIGN KEY (tenant_id, owner_id) REFERENCES users(tenant_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS proxy_nodes (
+  tenant_id VARCHAR(128) NOT NULL,
+  proxy_id VARCHAR(128) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  signing_public_key VARCHAR(512),
+  quota BIGINT NOT NULL,
+  usage_count BIGINT NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (tenant_id, proxy_id)
+);
+
+CREATE TABLE IF NOT EXISTS idempotency_records (
+  tenant_id VARCHAR(128) NOT NULL,
+  actor_id VARCHAR(128) NOT NULL,
+  action VARCHAR(128) NOT NULL,
+  resource_id VARCHAR(128) NOT NULL,
+  idempotency_key VARCHAR(256) NOT NULL,
+  body_hash VARCHAR(128) NOT NULL,
+  response_digest VARCHAR(128) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (tenant_id, actor_id, action, resource_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS rewrap_jobs (
+  tenant_id VARCHAR(128) NOT NULL,
+  job_id VARCHAR(128) NOT NULL,
+  data_id VARCHAR(128) NOT NULL,
+  from_content_key_version INT NOT NULL,
+  to_content_key_version INT NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  completed_at TIMESTAMP,
+  PRIMARY KEY (tenant_id, job_id)
 );
 
 CREATE TABLE IF NOT EXISTS token_revocations (
@@ -95,4 +150,12 @@ CREATE TABLE IF NOT EXISTS audit_events (
   detail_json CLOB NOT NULL,
   previous_hash VARCHAR(128) NOT NULL,
   event_hash VARCHAR(128) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_public_keys (
+  key_id VARCHAR(128) PRIMARY KEY,
+  algorithm VARCHAR(32) NOT NULL,
+  encoded_public_key VARCHAR(512) NOT NULL,
+  valid_from TIMESTAMP NOT NULL,
+  valid_until TIMESTAMP
 );

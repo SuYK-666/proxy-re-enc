@@ -11,4 +11,9 @@ public record SecureEnvelopePrivateKey(byte[] encoded) implements PrivateKeyMate
     public byte[] encoded() {
         return encoded.clone();
     }
+
+    @Override
+    public String toString() {
+        return "SecureEnvelopePrivateKey[<redacted>]";
+    }
 }

@@ -1,0 +1,12 @@
+{
+  "name": "rekeyshare-generated-benchmark-v2",
+  "generator": "ReproducibleDataset-v1",
+  "seed": "0x52454b5348415245",
+  "roundDerivation": "seed XOR (fileSizeBytes << 16) XOR round",
+  "sizesBytes": [1024, 102400, 1048576, 10485760],
+  "measurementRoundsPerAlgorithmSize": 100,
+  "warmupRoundsPerAlgorithmSize": 20,
+  "distributions": ["deterministic-random", "zero-heavy", "text-json", "binary-image-like", "compressible"],
+  "distributionComparison": {"fileSizeBytes": 1048576, "measurementRounds": 30, "rawOutput": "docs/reports/raw/e15-dataset-distribution-results.csv"},
+  "note": "E02 uses deterministic-random for algorithm comparison; E15 measures all five distributions. The runner writes canonical hashes to docs/reports/raw/dataset-manifest.json."
+}

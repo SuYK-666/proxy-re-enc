@@ -1,12 +1,11 @@
 # E01 End-to-End Correctness
 
-- Commit: `a85e36f`
-- JDK: `25.0.2`
+- Commit: `9189d85`
+- JDK: `22.0.2`
 - OS: `Windows 11 10.0`
-- Generated: `2026-05-26T06:34:34.738687800Z`
+- Generated: `2026-05-26T11:45:37.758293800Z`
 
-Secure envelope AEAD rounds over 1 KB, 100 KB, 1 MB and 10 MB files: 20;
-recovered: 20; unauthorized recipient rejected: 20.
+Secure envelope AEAD rounds over 1 KB, 100 KB, 1 MB and 10 MB files: 120; recovered: 120; unauthorized recipient rejected: 120.
 
 RSA/ECC baseline full payload paths are measured by E02 under their documented experimental security boundary.
 

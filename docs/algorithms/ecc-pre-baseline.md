@@ -9,3 +9,7 @@
 - production 正式默认路径不得只依赖该实现。
 
 对应负向验证：`EccPreSchemeTest` 中的错误点/篡改 header 拒绝，以及 `CryptoProviderTest` 对生产默认选择的约束。
+
+`EccCollusionBoundaryTest` 进一步以可执行测试证明：持有 baseline re-key
+scalar 的代理若与接收方私钥持有人合谋，可恢复 owner scalar。因此
+`ECC_PRE_BASELINE` 只能用于演示/性能对照，不能在 `PRODUCTION` 启用。

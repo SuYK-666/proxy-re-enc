@@ -49,9 +49,13 @@ public final class RevocationService {
     }
 
     public ShareGrant revokeGrant(String ownerId, String grantId) {
+        return revokeGrant(ownerId, grantId, "owner requested revoke");
+    }
+
+    public ShareGrant revokeGrant(String ownerId, String grantId, String reason) {
         ShareGrant existing = authorization.assertCanRevokeGrant(ownerId, grantId);
         new StateTransitionGuard().grant(existing.status(), GrantStatus.REVOKED);
-        ShareGrant grant = existing.revoke();
+        ShareGrant grant = existing.revoke(reason);
         grantRepository.save(grant);
         if (packageRepository != null) {
             packageRepository.findAll().stream()
@@ -62,7 +66,8 @@ public final class RevocationService {
                         packageRepository.save(dataPackage.invalidate(PackageStatus.INVALIDATED, "grant revoked"));
                     });
         }
-        audit.record(new AuditEvent(Instant.now(), ownerId, "GRANT_REVOKE", grantId, true, "soft revoke"));
+        audit.record(new AuditEvent(Instant.now(), ownerId, "GRANT_REVOKE", grantId, true,
+                "packages invalidated; reason=" + reason));
         return grant;
     }
 

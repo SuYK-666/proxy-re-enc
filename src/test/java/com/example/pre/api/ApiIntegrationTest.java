@@ -48,6 +48,8 @@ class ApiIntegrationTest {
             assertTrue(bobDownload.body().contains("\"packageVersion\":\"v2\""));
             assertTrue(bobDownload.body().contains("\"manifestHash\""));
             assertTrue(bobDownload.body().contains("\"schemeId\":\"RSA_PRE_BASELINE\""));
+            assertTrue(bobDownload.body().contains("\"securityLevel\":\"EXPERIMENTAL\""));
+            assertTrue(bobDownload.body().contains("\"conversionProofDigest\""));
             assertTrue(!bobDownload.body().contains("api-secret"));
 
             HttpResponse<String> bobDemoDecrypt = get(base + "/api/demo/shared-packages/" + packageId + "/decrypt", bobToken);
@@ -188,7 +190,17 @@ class ApiIntegrationTest {
             assertTrue(!openApi.contains("/api/demo/shared-packages/{packageId}/decrypt"));
             assertTrue(!openApi.contains("/api/data/upload\""));
             assertTrue(!openApi.contains("/api/users/{userId}/keys/rotate"));
-            String aliceToken = createUser(base, "ProdAlice", "OWNER", "RSA_PRE");
+            assertTrue(!openApi.contains("/api/proxy/re-encrypt"));
+            assertTrue(!openApi.contains("/api/grants\""));
+            HttpResponse<String> baselineRegistration = post(base + "/api/users", "",
+                    "userId=Rejected&role=OWNER&algorithm=RSA_PRE");
+            assertEquals(403, baselineRegistration.statusCode());
+            assertTrue(baselineRegistration.body().contains("CRYPTO_PROFILE_NOT_ALLOWED"));
+            HttpResponse<String> formalRegistration = post(base + "/api/users", "",
+                    "userId=ProdAlice&role=OWNER&algorithm=SECURE_ENVELOPE");
+            assertEquals(201, formalRegistration.statusCode());
+            assertTrue(formalRegistration.body().contains("\"algorithmSuite\":\"SECURE_ENVELOPE_V1\""));
+            String aliceToken = field(formalRegistration.body(), "token");
             HttpResponse<String> upload = post(base + "/api/data/upload", aliceToken, "plaintext=must-not-work");
             assertEquals(403, upload.statusCode());
             assertTrue(upload.body().contains("DEMO_ONLY_API_DISABLED"));
@@ -279,8 +291,13 @@ class ApiIntegrationTest {
             HttpResponse<String> replay = postIdempotent(base + "/api/data/upload", aliceToken,
                     "plaintext=replay-protected", "upload-key-1");
             assertEquals(201, first.statusCode());
-            assertEquals(403, replay.statusCode());
-            assertTrue(replay.body().contains("POLICY_VIOLATION"));
+            assertEquals(201, replay.statusCode());
+            assertEquals(field(first.body(), "dataId"), field(replay.body(), "dataId"));
+
+            HttpResponse<String> conflict = postIdempotent(base + "/api/data/upload", aliceToken,
+                    "plaintext=different-operation", "upload-key-1");
+            assertEquals(403, conflict.statusCode());
+            assertTrue(conflict.body().contains("IDEMPOTENCY_CONFLICT"));
         } finally {
             server.stop();
         }

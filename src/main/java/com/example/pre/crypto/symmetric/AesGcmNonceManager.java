@@ -16,6 +16,7 @@ public final class AesGcmNonceManager {
             "rekeyshare.nonce.registry",
             "storage/security/aes-gcm-nonces.txt"
     ));
+    private static boolean loaded;
 
     private AesGcmNonceManager() {
     }
@@ -27,7 +28,7 @@ public final class AesGcmNonceManager {
         String keyFingerprint = Hash.sha256Hex(key);
         String nonceValue = Base64.getEncoder().encodeToString(nonce);
         String entry = keyFingerprint + ":" + nonceValue;
-        loadRegistry();
+        ensureRegistryLoaded();
         if (!USED_NONCES.add(entry)) {
             return false;
         }
@@ -37,6 +38,7 @@ public final class AesGcmNonceManager {
 
     static synchronized void clearForTest() {
         USED_NONCES.clear();
+        loaded = true;
         try {
             Files.deleteIfExists(REGISTRY);
         } catch (IOException e) {
@@ -46,14 +48,20 @@ public final class AesGcmNonceManager {
 
     static synchronized void clearMemoryForRestartTest() {
         USED_NONCES.clear();
+        loaded = false;
     }
 
-    private static void loadRegistry() {
+    private static void ensureRegistryLoaded() {
+        if (loaded) {
+            return;
+        }
         if (!Files.exists(REGISTRY)) {
+            loaded = true;
             return;
         }
         try {
             USED_NONCES.addAll(Files.readAllLines(REGISTRY));
+            loaded = true;
         } catch (IOException e) {
             throw new IllegalStateException("failed to read AES-GCM nonce registry", e);
         }
