@@ -1,0 +1,4 @@
+fileSizeBytes,chunkBytes,chunks,encryptMs,decryptVerifyMs,merkleVerified,success
+1048576,1048576,1,19.3840,18.8548,true,true
+10485760,1048576,10,138.5277,115.2649,true,true
+104857600,1048576,100,1387.3021,1102.4861,true,true

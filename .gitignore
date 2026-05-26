@@ -1,0 +1,10 @@
+target/
+*.class
+
+.github/workflows/ci.yml
+
+.idea/
+.vscode/
+*.iml
+
+.DS_Store

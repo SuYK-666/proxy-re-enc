@@ -1,0 +1,5 @@
+﻿{
+  "DB-01":"snapshot export/import code path available via StorageSnapshotService",
+  "DB-03":"self-test audit verification PASS after generated operations",
+  "raw":["docs/reports/raw/L10/self-test-output.txt"]
+}

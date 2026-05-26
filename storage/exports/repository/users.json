@@ -1,0 +1,1 @@
+{"users":[{"userId":"admin","role":"ADMIN","status":"ACTIVE"},{"userId":"Alice","role":"OWNER","status":"ACTIVE"},{"userId":"Bob","role":"RECIPIENT","status":"ACTIVE"}]}

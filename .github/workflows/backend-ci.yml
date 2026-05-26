@@ -1,0 +1,42 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Test and quality gates
+        run: mvn --batch-mode verify
+      - name: Security boundary guard
+        run: sh scripts/check-security-boundary.sh
+      - name: Generate reproducible experiment evidence
+        run: sh scripts/run-all-experiments.sh
+      - name: Documentation and performance evidence gates
+        run: |
+          sh scripts/check-docs-format.sh
+          sh scripts/check-doc-links.sh
+          sh scripts/check-performance-budget.sh
+      - name: Upload reports and SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-security-evidence
+          path: |
+            docs/reports/raw
+            docs/reports/summary
+            target/site/jacoco
+            target/bom.json
+            target/surefire-reports
